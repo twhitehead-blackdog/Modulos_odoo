@@ -194,3 +194,34 @@ class OdooClient:
             [],
             {"name": name, "args": domain, "limit": limit},
         )
+
+    def read_group(
+        self,
+        model: str,
+        domain: list[Any] | None = None,
+        fields: list[str] | None = None,
+        groupby: list[str] | None = None,
+        limit: int | None = None,
+        orderby: str | None = None,
+        lazy: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Read grouped and aggregated data."""
+        domain = domain or []
+        fields = fields or []
+        groupby = groupby or []
+        kwargs: dict[str, Any] = {"lazy": lazy}
+        if limit is not None:
+            kwargs["limit"] = limit
+        if orderby:
+            kwargs["orderby"] = orderby
+        return self.execute_kw(
+            model, "read_group", [domain, fields, groupby], kwargs
+        )
+
+    def create_multi(self, model: str, values_list: list[dict[str, Any]]) -> list[int]:
+        """Create multiple records at once and return their IDs."""
+        return self.execute_kw(model, "create", [values_list])
+
+    def default_get(self, model: str, fields: list[str]) -> dict[str, Any]:
+        """Get default values for fields on a model."""
+        return self.execute_kw(model, "default_get", [fields])
