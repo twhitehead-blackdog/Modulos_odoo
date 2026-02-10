@@ -2,7 +2,7 @@
 
 Servidor MCP (Model Context Protocol) para conectar Claude con instancias de Odoo 18 a través de XML-RPC.
 
-## Herramientas disponibles (43 tools)
+## Herramientas disponibles (73 tools)
 
 ### General / CRUD
 
@@ -111,6 +111,108 @@ Servidor MCP (Model Context Protocol) para conectar Claude con instancias de Odo
 | `create_purchase_order_with_lines` | Crear orden de compra con líneas (desde datos de un PDF) |
 | `create_sale_order_with_lines` | Crear orden de venta/cotización con líneas |
 | `attach_file_to_record` | Adjuntar archivo (PDF, imagen) a un registro de Odoo |
+
+### Petshop y Clínica Veterinaria (Black Dog)
+
+| Herramienta | Descripción |
+|---|---|
+| `get_pets` | Buscar mascotas con filtros (dueño, especie, vacunación) |
+| `get_pet_details` | Ver detalle completo de una mascota con historial de servicios y vacunas |
+| `get_pet_breeds` | Catálogo de razas por especie |
+| `get_pet_service_templates` | Plantillas de servicios (baño, corte, spa) |
+| `get_pets_with_overdue_vaccines` | Mascotas con vacunas vencidas |
+
+### Auditoría Operativa
+
+| Herramienta | Descripción |
+|---|---|
+| `get_audit_logs` | Consultar logs de auditoría por tipo, severidad, estado |
+| `get_audit_summary` | Resumen de auditorías abiertas por tipo y severidad |
+
+### Control de Vencimientos
+
+| Herramienta | Descripción |
+|---|---|
+| `get_expiring_products` | Productos próximos a vencer (por estado, almacén) |
+| `get_expiry_summary` | Resumen de vencimientos por estado y almacén |
+
+### Ajustes de Inventario
+
+| Herramienta | Descripción |
+|---|---|
+| `get_inventory_adjustment_logs` | Logs de auditoría de ajustes de inventario |
+
+### Transferencias entre Tiendas
+
+| Herramienta | Descripción |
+|---|---|
+| `get_transfer_requests` | Solicitudes de transferencia interna (workflow de aprobación) |
+
+### Reabastecimiento Estimado
+
+| Herramienta | Descripción |
+|---|---|
+| `get_replenishment_orders` | Órdenes de reabastecimiento (tienda o almacén) |
+
+### Metas de Ventas y Analítica
+
+| Herramienta | Descripción |
+|---|---|
+| `get_sales_targets` | Metas mensuales de ventas por cuenta analítica |
+| `get_sales_target_performance` | Rendimiento histórico vs metas (%, logro, crecimiento) |
+
+### Segmentación de Clientes
+
+| Herramienta | Descripción |
+|---|---|
+| `get_customer_segmentation` | Datos RFM, valor, riesgo de abandono por cliente |
+| `get_customer_segmentation_summary` | Resumen por tier, segmento de valor y riesgo |
+
+### Aprobación de Productos
+
+| Herramienta | Descripción |
+|---|---|
+| `get_product_requests` | Solicitudes de creación de productos (workflow de aprobación) |
+
+### Aprobación de Compras
+
+| Herramienta | Descripción |
+|---|---|
+| `get_purchase_approval_status` | Estado de aprobación de OC por meses de inventario proyectado |
+
+### Pasarelas de Pago (Tilopay & Yappy)
+
+| Herramienta | Descripción |
+|---|---|
+| `get_tilopay_transactions` | Transacciones de pago Tilopay |
+| `get_yappy_transactions` | Transacciones de pago Yappy (móvil Panamá) |
+
+### Mensajería WhatsApp (Respond.io & Wassenger)
+
+| Herramienta | Descripción |
+|---|---|
+| `get_respond_message_logs` | Logs de mensajes enviados por Respond.io |
+| `get_respond_buttons` | Botones/plantillas configurados en Respond.io |
+| `get_wassenger_message_logs` | Logs de mensajes WhatsApp enviados por Wassenger |
+
+### Shopify
+
+| Herramienta | Descripción |
+|---|---|
+| `get_shopify_instances` | Instancias de Shopify configuradas |
+| `get_shopify_products` | Productos sincronizados con Shopify |
+
+### Márgenes de Producto
+
+| Herramienta | Descripción |
+|---|---|
+| `get_product_margins` | Márgenes de ganancia, markup y precio sugerido |
+
+### Discrepancias de Inventario
+
+| Herramienta | Descripción |
+|---|---|
+| `get_stock_discrepancies` | Discrepancias entre inventario teórico y físico |
 
 ## Requisitos
 
@@ -281,6 +383,51 @@ Claude realizará:
 > "Qué dice este PDF? /home/user/documento.pdf"
 
 Claude usará `parse_pdf` y te mostrará el texto, tablas y montos detectados.
+
+### Ver mascotas de un cliente
+> "Muéstrame las mascotas de Juan Pérez con su historial de vacunas"
+
+Claude usará `get_pets` con `owner_name="Juan Pérez"` y luego `get_pet_details` para cada mascota.
+
+### Mascotas con vacunas vencidas
+> "Qué mascotas necesitan vacunación?"
+
+Claude usará `get_pets_with_overdue_vaccines`.
+
+### Alertas de auditoría
+> "Hay alertas críticas de auditoría abiertas?"
+
+Claude usará `get_audit_logs` con `severity="critical"` y `state="open"`.
+
+### Productos por vencer
+> "Qué productos están por vencer en los próximos 30 días?"
+
+Claude usará `get_expiring_products` con `state="one_month"` y `handled=False`.
+
+### Rendimiento de ventas vs metas
+> "Cómo vamos con las metas de ventas de enero 2025?"
+
+Claude usará `get_sales_target_performance` con `month="1"` y `year=2025`.
+
+### Clientes en riesgo de abandono
+> "Qué clientes VIP están en riesgo de irse?"
+
+Claude usará `get_customer_segmentation` con `value_segment="vip"` y `churn_risk="alto"`.
+
+### Solicitudes de productos pendientes
+> "Hay productos esperando aprobación?"
+
+Claude usará `get_product_requests` con `state="to_approve"`.
+
+### Transacciones Yappy
+> "Muéstrame las transacciones de Yappy pendientes"
+
+Claude usará `get_yappy_transactions` con `state="pending"`.
+
+### Vista general del negocio
+> "Dame un resumen completo del estado del negocio hoy"
+
+Claude usará el prompt `blackdog_daily_overview` que ejecuta 10 consultas para un panorama completo.
 
 ## Desarrollo
 

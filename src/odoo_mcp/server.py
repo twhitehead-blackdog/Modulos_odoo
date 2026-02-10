@@ -1992,6 +1992,1221 @@ def parse_pdf_and_create_vendor_bill(
     return "\n".join(parts)
 
 
+# ===========================================================================
+# Black Dog Custom Module Tools
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Petshop & Clínica Veterinaria Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_pets(
+    owner_name: str = "",
+    species: str = "",
+    name: str = "",
+    vaccinated: bool | None = None,
+    limit: int = 20,
+) -> str:
+    """Get pets registered in the petshop/veterinary clinic system.
+
+    This searches the x_pet model from the petshop_clinica module.
+
+    Args:
+        owner_name: Filter by pet owner name (partial match).
+        species: Filter by species: 'dog', 'cat', or 'other'.
+        name: Filter by pet name (partial match).
+        vaccinated: Filter by vaccination status - True for up-to-date, False for overdue.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if owner_name:
+        domain.append(["owner_id.name", "ilike", owner_name])
+    if species:
+        domain.append(["species", "=", species])
+    if name:
+        domain.append(["name", "ilike", name])
+    if vaccinated is not None:
+        domain.append(["vacunas_al_dia", "=", vaccinated])
+
+    client = get_client()
+    records = client.search_read(
+        "x_pet",
+        domain=domain,
+        fields=[
+            "name", "owner_id", "species", "raza_id", "gender",
+            "birth_date", "age", "weight", "color", "is_sterilized",
+            "vacunas_al_dia", "service_count", "vaccine_count",
+            "servicio_bano_id", "servicio_corte_id",
+            "notas_peluqueria", "allergies", "medical_notes",
+        ],
+        limit=limit,
+        order="name",
+    )
+    count = client.search_count("x_pet", domain=domain)
+    header = f"Pets: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_pet_details(pet_id: int) -> str:
+    """Get full details of a pet including service and vaccine history.
+
+    Args:
+        pet_id: The ID of the pet (x_pet) record.
+    """
+    client = get_client()
+    pets = client.read(
+        "x_pet",
+        [pet_id],
+        fields=[
+            "name", "owner_id", "species", "raza_id", "gender",
+            "birth_date", "age", "weight", "color", "microchip",
+            "is_sterilized", "allergies", "medical_notes",
+            "servicio_bano_id", "servicio_corte_id", "notas_peluqueria",
+            "vacunas_al_dia", "service_count", "vaccine_count",
+            "image",
+        ],
+    )
+    if not pets:
+        return f"Pet with ID {pet_id} not found."
+
+    pet = pets[0]
+    parts = [json.dumps(pet, indent=2, default=str, ensure_ascii=False)]
+
+    # Get service history
+    services = client.search_read(
+        "pet.service.history",
+        domain=[["mascota_id", "=", pet_id]],
+        fields=["service_template_id", "fecha", "employee_id", "precio", "state", "notes"],
+        limit=20,
+        order="fecha desc",
+    )
+    if services:
+        parts.append(f"\n=== Service History ({len(services)} records) ===")
+        parts.append(json.dumps(services, indent=2, default=str, ensure_ascii=False))
+
+    # Get vaccine history
+    vaccines = client.search_read(
+        "pet.vaccine.history",
+        domain=[["mascota_id", "=", pet_id]],
+        fields=["vaccine_id", "fecha_aplicada", "proxima_fecha", "veterinarian_id", "notes"],
+        limit=20,
+        order="fecha_aplicada desc",
+    )
+    if vaccines:
+        parts.append(f"\n=== Vaccine History ({len(vaccines)} records) ===")
+        parts.append(json.dumps(vaccines, indent=2, default=str, ensure_ascii=False))
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def get_pet_breeds(species: str = "") -> str:
+    """Get the catalog of pet breeds.
+
+    Args:
+        species: Filter by species: 'dog', 'cat', or 'other'. Leave empty for all.
+    """
+    domain: list[Any] = []
+    if species:
+        domain.append(["species", "=", species])
+
+    client = get_client()
+    records = client.search_read(
+        "mascota.raza",
+        domain=domain,
+        fields=["name", "species", "description"],
+        order="species, name",
+    )
+    if not records:
+        return "No breeds found."
+    return f"Pet Breeds ({len(records)}):\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_pet_service_templates(service_type: str = "") -> str:
+    """Get pet service templates (bath, cut, spa, etc.).
+
+    Args:
+        service_type: Filter by type: 'bath', 'cut', 'spa', 'other'. Leave empty for all.
+    """
+    domain: list[Any] = []
+    if service_type:
+        domain.append(["service_type", "=", service_type])
+
+    client = get_client()
+    records = client.search_read(
+        "pet.service.template",
+        domain=domain,
+        fields=["name", "service_type", "product_id", "duration_minutes", "description"],
+        order="service_type, sequence, name",
+    )
+    if not records:
+        return "No service templates found."
+    return f"Pet Service Templates ({len(records)}):\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_pets_with_overdue_vaccines() -> str:
+    """Get pets that have overdue vaccinations.
+
+    Returns pets where vacunas_al_dia is False, meaning they need vaccination.
+    Useful for generating vaccination reminders and follow-ups.
+    """
+    client = get_client()
+    records = client.search_read(
+        "x_pet",
+        domain=[["vacunas_al_dia", "=", False], ["active", "=", True]],
+        fields=[
+            "name", "owner_id", "species", "raza_id",
+            "age", "vacunas_al_dia", "vaccine_count",
+        ],
+        limit=50,
+        order="owner_id, name",
+    )
+    if not records:
+        return "All pets have up-to-date vaccinations!"
+    count = client.search_count(
+        "x_pet", domain=[["vacunas_al_dia", "=", False], ["active", "=", True]]
+    )
+    header = f"Pets with Overdue Vaccines: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Audit Control Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_audit_logs(
+    audit_type: str = "",
+    severity: str = "",
+    state: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    user_name: str = "",
+    limit: int = 20,
+) -> str:
+    """Get operational audit logs (audit.log) from the audit_control module.
+
+    These logs track critical business events like uninvoiced sales orders
+    and inventory adjustments.
+
+    Args:
+        audit_type: Filter by type: 'sales', 'inventory', 'finance', 'security'.
+        severity: Filter by severity: 'info', 'warning', 'critical'.
+        state: Filter by state: 'open', 'reviewed', 'justified'.
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+        user_name: Filter by the user who triggered the event (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if audit_type:
+        domain.append(["audit_type", "=", audit_type])
+    if severity:
+        domain.append(["severity", "=", severity])
+    if state:
+        domain.append(["state", "=", state])
+    if date_from:
+        domain.append(["date", ">=", date_from])
+    if date_to:
+        domain.append(["date", "<=", date_to])
+    if user_name:
+        domain.append(["user_id.name", "ilike", user_name])
+
+    client = get_client()
+    records = client.search_read(
+        "audit.log",
+        domain=domain,
+        fields=[
+            "name", "audit_type", "severity", "state", "user_id",
+            "date", "model", "res_id", "impact_amount", "details",
+        ],
+        limit=limit,
+        order="date desc",
+    )
+    count = client.search_count("audit.log", domain=domain)
+    header = f"Audit Logs: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_audit_summary() -> str:
+    """Get a summary of audit logs grouped by type and severity.
+
+    Returns aggregated counts and impact amounts for each audit type.
+    """
+    client = get_client()
+
+    # By type
+    by_type = client.read_group(
+        "audit.log",
+        domain=[["state", "=", "open"]],
+        fields=["audit_type", "impact_amount"],
+        groupby=["audit_type"],
+    )
+    # By severity
+    by_severity = client.read_group(
+        "audit.log",
+        domain=[["state", "=", "open"]],
+        fields=["severity", "impact_amount"],
+        groupby=["severity"],
+    )
+
+    parts = ["=== Open Audit Logs by Type ==="]
+    for g in by_type:
+        atype = g.get("audit_type", "unknown")
+        count = g.get("audit_type_count", 0)
+        amount = g.get("impact_amount", 0)
+        parts.append(f"- {atype}: {count} logs, impact: {amount:,.2f}")
+
+    parts.append("\n=== Open Audit Logs by Severity ===")
+    for g in by_severity:
+        sev = g.get("severity", "unknown")
+        count = g.get("severity_count", 0)
+        amount = g.get("impact_amount", 0)
+        parts.append(f"- {sev}: {count} logs, impact: {amount:,.2f}")
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Inventory Expiry Control Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_expiring_products(
+    state: str = "",
+    warehouse_name: str = "",
+    product_name: str = "",
+    handled: bool | None = None,
+    limit: int = 30,
+) -> str:
+    """Get products nearing expiration from the inventory_expiry_control module.
+
+    The inventory.expiry.line model tracks products with expiration dates and
+    their handling status.
+
+    Args:
+        state: Filter by expiry state: 'expired', 'one_month', 'three_months', 'six_months'.
+        warehouse_name: Filter by warehouse name (partial match).
+        product_name: Filter by product name (partial match).
+        handled: Filter by handling status - True for handled, False for pending.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if state:
+        domain.append(["state", "=", state])
+    if warehouse_name:
+        domain.append(["warehouse_id.name", "ilike", warehouse_name])
+    if product_name:
+        domain.append(["product_id.name", "ilike", product_name])
+    if handled is not None:
+        domain.append(["handled", "=", handled])
+
+    client = get_client()
+    records = client.search_read(
+        "inventory.expiry.line",
+        domain=domain,
+        fields=[
+            "name", "product_id", "lot_id", "warehouse_id",
+            "qty", "qty_remaining", "qty_sold", "qty_transferred",
+            "expiration_date", "days_to_expire", "state",
+            "handled", "handling_action", "value_amount",
+            "progress_percent",
+        ],
+        limit=limit,
+        order="days_to_expire asc",
+    )
+    count = client.search_count("inventory.expiry.line", domain=domain)
+    header = f"Expiring Products: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_expiry_summary() -> str:
+    """Get a summary of expiry control status grouped by state and warehouse.
+
+    Returns counts and values at risk for each expiry category.
+    """
+    client = get_client()
+
+    by_state = client.read_group(
+        "inventory.expiry.line",
+        domain=[["handled", "=", False]],
+        fields=["state", "value_amount", "qty_remaining"],
+        groupby=["state"],
+    )
+    by_wh = client.read_group(
+        "inventory.expiry.line",
+        domain=[["handled", "=", False]],
+        fields=["warehouse_id", "value_amount", "qty_remaining"],
+        groupby=["warehouse_id"],
+    )
+
+    parts = ["=== Pending Expiry Lines by State ==="]
+    for g in by_state:
+        st = g.get("state", "unknown")
+        count = g.get("state_count", 0)
+        value = g.get("value_amount", 0)
+        qty = g.get("qty_remaining", 0)
+        parts.append(f"- {st}: {count} lines, qty: {qty:,.0f}, value at risk: {value:,.2f}")
+
+    parts.append("\n=== Pending Expiry Lines by Warehouse ===")
+    for g in by_wh:
+        wh = g.get("warehouse_id", [False, "Unknown"])
+        wh_name = wh[1] if isinstance(wh, (list, tuple)) else str(wh)
+        count = g.get("warehouse_id_count", 0)
+        value = g.get("value_amount", 0)
+        parts.append(f"- {wh_name}: {count} lines, value at risk: {value:,.2f}")
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Inventory Adjustment Audit Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_inventory_adjustment_logs(
+    product_name: str = "",
+    warehouse_name: str = "",
+    impact_level: str = "",
+    reviewed: bool | None = None,
+    date_from: str = "",
+    date_to: str = "",
+    limit: int = 20,
+) -> str:
+    """Get inventory adjustment audit logs from inventory_adjustment_custom_report module.
+
+    Tracks every inventory adjustment with details about who made it, the quantity
+    difference, cost impact, and review status.
+
+    Args:
+        product_name: Filter by product name (partial match).
+        warehouse_name: Filter by warehouse name (partial match).
+        impact_level: Filter by impact: 'low', 'medium', 'high', 'critical'.
+        reviewed: Filter by review status - True for reviewed, False for pending.
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if product_name:
+        domain.append(["product_id.name", "ilike", product_name])
+    if warehouse_name:
+        domain.append(["warehouse_id.name", "ilike", warehouse_name])
+    if impact_level:
+        domain.append(["impact_level", "=", impact_level])
+    if reviewed is not None:
+        domain.append(["reviewed", "=", reviewed])
+    if date_from:
+        domain.append(["create_date", ">=", date_from])
+    if date_to:
+        domain.append(["create_date", "<=", date_to])
+
+    client = get_client()
+    records = client.search_read(
+        "inventory.adjustment.log",
+        domain=domain,
+        fields=[
+            "product_id", "warehouse_id", "inventory_location_id",
+            "user_id", "qty_estimated", "qty_confirmed", "qty_diff",
+            "percent_diff", "impact_level", "price_cost_unit",
+            "total_price_cost", "reviewed", "tipo_ajuste", "detalle",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count("inventory.adjustment.log", domain=domain)
+    header = f"Inventory Adjustment Logs: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Store Transfer Request Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_transfer_requests(
+    state: str = "",
+    warehouse_dest: str = "",
+    reason: str = "",
+    limit: int = 20,
+) -> str:
+    """Get store transfer requests from the store_transfer_request module.
+
+    These are internal stock transfer requests between stores, with an
+    approval workflow (draft → submitted → approved → done).
+
+    Args:
+        state: Filter by state: 'draft', 'submitted', 'approved', 'rejected', 'done'.
+        warehouse_dest: Filter by destination warehouse name (partial match).
+        reason: Filter by transfer reason (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if state:
+        domain.append(["state", "=", state])
+    if warehouse_dest:
+        domain.append(["warehouse_dest_id.name", "ilike", warehouse_dest])
+    if reason:
+        domain.append(["reason", "ilike", reason])
+
+    client = get_client()
+    records = client.search_read(
+        "store.transfer.request",
+        domain=domain,
+        fields=[
+            "name", "state", "reason", "observations",
+            "requested_by", "responsible_employee_id",
+            "warehouse_id", "warehouse_dest_id",
+            "line_count", "amount_total", "picking_id",
+            "managed_by", "managed_date",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count("store.transfer.request", domain=domain)
+    header = f"Transfer Requests: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Estimated Replenishment Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_replenishment_orders(
+    state: str = "",
+    order_type: str = "store",
+    limit: int = 20,
+) -> str:
+    """Get estimated replenishment orders (store or warehouse).
+
+    The estimated_replenishment module manages automatic stock replenishment
+    calculations for stores and warehouses.
+
+    Args:
+        state: Filter by state: 'draft', 'confirmed', 'done', 'cancel'.
+        order_type: 'store' for store replenishment orders,
+                    'warehouse' for warehouse/purchase replenishment orders.
+        limit: Maximum number of results.
+    """
+    model = (
+        "estimated.replenishment.order"
+        if order_type == "store"
+        else "estimated.replenishment.wh.order"
+    )
+    domain: list[Any] = []
+    if state:
+        domain.append(["state", "=", state])
+
+    client = get_client()
+    fields = [
+        "name", "state", "days_to", "create_date",
+        "confirmed_by" if order_type == "store" else "purchase_order_count",
+    ]
+
+    records = client.search_read(
+        model,
+        domain=domain,
+        fields=fields,
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count(model, domain=domain)
+    label = "Store" if order_type == "store" else "Warehouse"
+    header = f"{label} Replenishment Orders: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Sales Targets & Analytics Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_sales_targets(
+    month: str = "",
+    year: int = 0,
+    account_name: str = "",
+    limit: int = 30,
+) -> str:
+    """Get monthly sales targets (meta.mensual) from the meta_ventas_analiticas module.
+
+    Each target defines goal thresholds (baja, promedio, alta, oro) per analytic
+    account (typically per employee/store) per month.
+
+    Args:
+        month: Filter by month number as string ('1' to '12').
+        year: Filter by year (e.g. 2025). Use 0 for all years.
+        account_name: Filter by analytic account name (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if month:
+        domain.append(["mes", "=", month])
+    if year:
+        domain.append(["anio", "=", year])
+    if account_name:
+        domain.append(["analytic_account_id.name", "ilike", account_name])
+
+    client = get_client()
+    records = client.search_read(
+        "meta.mensual",
+        domain=domain,
+        fields=[
+            "analytic_account_id", "mes", "anio",
+            "meta_baja", "meta_promedio", "meta_alta", "meta_oro",
+        ],
+        limit=limit,
+        order="anio desc, mes desc",
+    )
+    count = client.search_count("meta.mensual", domain=domain)
+    header = f"Sales Targets: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_sales_target_performance(
+    month: str = "",
+    year: int = 0,
+    account_name: str = "",
+    limit: int = 30,
+) -> str:
+    """Get historical sales target performance (meta.analitica.historica).
+
+    Shows actual sales vs targets with achievement percentages, growth trends,
+    and performance levels.
+
+    Args:
+        month: Filter by month number as string ('1' to '12').
+        year: Filter by year (e.g. 2025). Use 0 for all years.
+        account_name: Filter by analytic account name (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if month:
+        domain.append(["mes", "=", month])
+    if year:
+        domain.append(["anio", "=", year])
+    if account_name:
+        domain.append(["analytic_account_id.name", "ilike", account_name])
+
+    client = get_client()
+    records = client.search_read(
+        "meta.analitica.historica",
+        domain=domain,
+        fields=[
+            "analytic_account_id", "mes_nombre", "anio",
+            "ventas_con_itbms", "meta_baja", "meta_promedio", "meta_alta", "meta_oro",
+            "porcentaje_baja", "porcentaje_promedio", "porcentaje_alta", "porcentaje_oro",
+            "alcanzo_meta_baja", "alcanzo_meta_promedio", "alcanzo_meta_alta", "alcanzo_meta_oro",
+            "diferencia_alta", "crecimiento_vs_mes_anterior", "nivel_estado",
+        ],
+        limit=limit,
+        order="anio desc, mes desc",
+    )
+    count = client.search_count("meta.analitica.historica", domain=domain)
+    header = f"Sales Target Performance: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Customer Segmentation Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_customer_segmentation(
+    segment: str = "",
+    rfm_tier: str = "",
+    churn_risk: str = "",
+    value_segment: str = "",
+    limit: int = 30,
+) -> str:
+    """Get customer segmentation data from the res_partner_segmentation module.
+
+    Provides RFM analysis (Recency, Frequency, Monetary), value segmentation,
+    churn risk scoring, and behavioral metrics for each customer.
+
+    Args:
+        segment: Time segment: 'menos_30', 'menos_60', 'menos_90', 'mas_90'.
+        rfm_tier: Customer tier: 'diamante', 'oro', 'plata', 'bronce', 'nuevo'.
+        churn_risk: Churn risk level: 'alto', 'medio', 'bajo', 'ninguno'.
+        value_segment: Value segment: 'vip', 'premium', 'regular', 'bajo'.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = [["customer_rank", ">", 0]]
+    if segment:
+        domain.append(["x_segmento_30_60_90", "=", segment])
+    if rfm_tier:
+        domain.append(["x_rango_cliente", "=", rfm_tier])
+    if churn_risk:
+        domain.append(["x_riesgo_abandono", "=", churn_risk])
+    if value_segment:
+        domain.append(["x_segmento_valor", "=", value_segment])
+
+    client = get_client()
+    records = client.search_read(
+        "res.partner",
+        domain=domain,
+        fields=[
+            "name", "x_total_gastado", "x_ticket_promedio",
+            "x_cantidad_total_compras", "x_frecuencia_compra_dias",
+            "x_dias_desde_ultima_compra", "x_fecha_ultima_compra",
+            "x_rango_cliente", "x_rfm_score", "x_segmento_valor",
+            "x_segmento_30_60_90", "x_riesgo_abandono", "x_score_abandono",
+            "x_segmento_crecimiento", "x_tendencia_ventas",
+            "x_top_1_producto", "x_categoria_favorita",
+            "x_cliente_leal", "x_tipo_cliente_mascota",
+        ],
+        limit=limit,
+        order="x_total_gastado desc",
+    )
+    count = client.search_count("res.partner", domain=domain)
+    header = f"Customer Segmentation: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_customer_segmentation_summary() -> str:
+    """Get a summary of customer segmentation grouped by tier and risk.
+
+    Returns customer counts and totals for each RFM tier, value segment,
+    and churn risk level.
+    """
+    client = get_client()
+    base_domain: list[Any] = [["customer_rank", ">", 0]]
+
+    by_tier = client.read_group(
+        "res.partner",
+        domain=base_domain,
+        fields=["x_rango_cliente", "x_total_gastado"],
+        groupby=["x_rango_cliente"],
+    )
+    by_value = client.read_group(
+        "res.partner",
+        domain=base_domain,
+        fields=["x_segmento_valor", "x_total_gastado"],
+        groupby=["x_segmento_valor"],
+    )
+    by_risk = client.read_group(
+        "res.partner",
+        domain=base_domain,
+        fields=["x_riesgo_abandono", "x_total_gastado"],
+        groupby=["x_riesgo_abandono"],
+    )
+
+    parts = ["=== Customer Tiers (RFM) ==="]
+    for g in by_tier:
+        tier = g.get("x_rango_cliente", "sin_clasificar") or "sin_clasificar"
+        count = g.get("x_rango_cliente_count", 0)
+        total = g.get("x_total_gastado", 0)
+        parts.append(f"- {tier}: {count} customers, total spent: {total:,.2f}")
+
+    parts.append("\n=== Value Segments ===")
+    for g in by_value:
+        seg = g.get("x_segmento_valor", "sin_clasificar") or "sin_clasificar"
+        count = g.get("x_segmento_valor_count", 0)
+        total = g.get("x_total_gastado", 0)
+        parts.append(f"- {seg}: {count} customers, total spent: {total:,.2f}")
+
+    parts.append("\n=== Churn Risk ===")
+    for g in by_risk:
+        risk = g.get("x_riesgo_abandono", "sin_clasificar") or "sin_clasificar"
+        count = g.get("x_riesgo_abandono_count", 0)
+        total = g.get("x_total_gastado", 0)
+        parts.append(f"- {risk}: {count} customers, total spent: {total:,.2f}")
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Product Approval Flow Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_product_requests(
+    state: str = "",
+    requester: str = "",
+    category: str = "",
+    limit: int = 20,
+) -> str:
+    """Get product creation requests from the product_approval_flow module.
+
+    Products must go through an approval workflow before being created in Odoo.
+    States: draft → to_approve → approved/rejected.
+
+    Args:
+        state: Filter by state: 'draft', 'to_approve', 'approved', 'rejected'.
+        requester: Filter by requester name (partial match).
+        category: Filter by product category name (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if state:
+        domain.append(["state", "=", state])
+    if requester:
+        domain.append(["request_user_id.name", "ilike", requester])
+    if category:
+        domain.append(["categ_id.name", "ilike", category])
+
+    client = get_client()
+    records = client.search_read(
+        "product.request",
+        domain=domain,
+        fields=[
+            "name", "default_code", "barcode", "categ_id",
+            "list_price", "standard_price", "type", "state",
+            "request_user_id", "approval_user_id",
+            "rejection_reason", "product_id",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count("product.request", domain=domain)
+    header = f"Product Requests: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Purchase Approval Flow Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_purchase_approval_status(
+    approval_state: str = "",
+    partner_name: str = "",
+    has_risk: bool | None = None,
+    limit: int = 20,
+) -> str:
+    """Get purchase orders with inventory approval status from purchase_approval_flow module.
+
+    POs are checked against projected inventory months to determine if they need
+    additional approval (Level 1 at 3+ months, Level 2 at 6+ months).
+
+    Args:
+        approval_state: Filter by approval state: 'none', 'level1_required',
+                        'level2_required', 'level1_approved', 'fully_approved'.
+        partner_name: Filter by vendor name (partial match).
+        has_risk: Filter by excess inventory risk - True for risky POs.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if approval_state:
+        domain.append(["inventory_approval_state", "=", approval_state])
+    if partner_name:
+        domain.append(["partner_id.name", "ilike", partner_name])
+    if has_risk is not None:
+        domain.append(["has_excess_inventory_risk", "=", has_risk])
+
+    client = get_client()
+    records = client.search_read(
+        "purchase.order",
+        domain=domain,
+        fields=[
+            "name", "partner_id", "state", "amount_total",
+            "inventory_approval_state", "max_months_after_purchase",
+            "has_excess_inventory_risk", "inventory_check_performed",
+            "level1_approver_id", "level1_approval_date",
+            "level2_approver_id", "level2_approval_date",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count("purchase.order", domain=domain)
+    header = f"Purchase Approval Status: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Payment Gateway Tools (Tilopay & Yappy)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_tilopay_transactions(
+    state: str = "",
+    partner_name: str = "",
+    limit: int = 20,
+) -> str:
+    """Get Tilopay payment transactions from the tilopay_payment module.
+
+    Tilopay is a payment gateway used in Panama for online payment links.
+
+    Args:
+        state: Filter by transaction state.
+        partner_name: Filter by partner name (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if state:
+        domain.append(["state", "=", state])
+    if partner_name:
+        domain.append(["partner_id.name", "ilike", partner_name])
+
+    client = get_client()
+    records = client.search_read(
+        "tilopay.payment.transaction",
+        domain=domain,
+        fields=[
+            "reference", "partner_id", "amount", "state",
+            "tilopay_transaction_id", "create_date",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count("tilopay.payment.transaction", domain=domain)
+    header = f"Tilopay Transactions: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_yappy_transactions(
+    state: str = "",
+    limit: int = 20,
+) -> str:
+    """Get Yappy payment transactions from the yappy_payment module.
+
+    Yappy is a popular mobile payment platform in Panama.
+
+    Args:
+        state: Filter by state (e.g. 'pending', 'success', 'failed').
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if state:
+        domain.append(["state", "=", state])
+
+    client = get_client()
+    records = client.search_read(
+        "yappy.payment.transaction",
+        domain=domain,
+        fields=[
+            "yappy_transaction_id", "amount", "phone_number",
+            "state", "response_code", "response_message", "create_date",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count("yappy.payment.transaction", domain=domain)
+    header = f"Yappy Transactions: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Messaging Tools (Respond.io & Wassenger)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_respond_message_logs(
+    status: str = "",
+    phone: str = "",
+    limit: int = 20,
+) -> str:
+    """Get Respond.io message logs from the respond_buttons module.
+
+    Tracks WhatsApp template messages sent via Respond.io to CRM leads and
+    sale orders.
+
+    Args:
+        status: Filter by status: 'draft', 'sent', 'error'.
+        phone: Filter by phone number (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if status:
+        domain.append(["status", "=", status])
+    if phone:
+        domain.append(["phone", "ilike", phone])
+
+    client = get_client()
+    records = client.search_read(
+        "respond.message.log",
+        domain=domain,
+        fields=[
+            "name", "lead_id", "order_id", "button_id",
+            "phone", "status", "error_message", "send_date",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count("respond.message.log", domain=domain)
+    header = f"Respond.io Message Logs: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_respond_buttons() -> str:
+    """Get configured Respond.io template buttons.
+
+    Lists all WhatsApp template buttons available for sending messages
+    from CRM leads and sale orders.
+    """
+    client = get_client()
+    records = client.search_read(
+        "respond.button",
+        domain=[["active", "=", True]],
+        fields=[
+            "name", "button_label", "target_model", "template_id",
+            "preview_body", "respond_language_code", "sequence",
+        ],
+        order="sequence, name",
+    )
+    if not records:
+        return "No Respond.io buttons configured."
+    return f"Respond.io Buttons ({len(records)}):\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_wassenger_message_logs(
+    status: str = "",
+    phone: str = "",
+    limit: int = 20,
+) -> str:
+    """Get Wassenger WhatsApp message logs from the wassenger_integration module.
+
+    Tracks WhatsApp messages sent via Wassenger API, typically for payment
+    link notifications and order confirmations.
+
+    Args:
+        status: Filter by status: 'sent', 'error', 'pending'.
+        phone: Filter by phone number (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if status:
+        domain.append(["status", "=", status])
+    if phone:
+        domain.append(["phone", "ilike", phone])
+
+    client = get_client()
+    records = client.search_read(
+        "wassenger.message.log",
+        domain=domain,
+        fields=[
+            "phone", "message", "status", "user_id",
+            "related_model", "related_record_id", "create_date",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+    count = client.search_count("wassenger.message.log", domain=domain)
+    header = f"Wassenger Message Logs: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Shopify Integration Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_shopify_instances() -> str:
+    """Get configured Shopify instances from the shopify_ept module.
+
+    Lists all Shopify store connections with their configuration status.
+    """
+    client = get_client()
+    records = client.search_read(
+        "shopify.instance.ept",
+        domain=[],
+        fields=[
+            "name", "shopify_host", "shopify_company_id",
+            "shopify_warehouse_id", "state",
+            "auto_import_product", "notify_customer",
+        ],
+        order="name",
+    )
+    if not records:
+        return "No Shopify instances configured."
+    return f"Shopify Instances ({len(records)}):\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_shopify_products(
+    name: str = "",
+    exported: bool | None = None,
+    limit: int = 20,
+) -> str:
+    """Get products synced with Shopify from the shopify_ept module.
+
+    Args:
+        name: Filter by product name (partial match).
+        exported: Filter by Shopify export status - True for exported, False for not.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if name:
+        domain.append(["name", "ilike", name])
+    if exported is not None:
+        domain.append(["exported_in_shopify", "=", exported])
+
+    client = get_client()
+    records = client.search_read(
+        "shopify.product.product.ept",
+        domain=domain,
+        fields=[
+            "name", "default_code", "product_id",
+            "shopify_instance_id", "exported_in_shopify",
+            "variant_id", "inventory_item_id",
+            "created_at", "updated_at",
+        ],
+        limit=limit,
+        order="name",
+    )
+    count = client.search_count("shopify.product.product.ept", domain=domain)
+    header = f"Shopify Products: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Product Margin Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_product_margins(
+    product_name: str = "",
+    category: str = "",
+    profitability: str = "",
+    limit: int = 30,
+) -> str:
+    """Get product profit margins from the product_margen_sugerido module.
+
+    Shows markup percentage, gross margin, suggested price, and profitability
+    level for each product.
+
+    Args:
+        product_name: Filter by product name (partial match).
+        category: Filter by product category name (partial match).
+        profitability: Filter by profitability level: 'bajo', 'bueno', 'excelente'.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if product_name:
+        domain.append(["name", "ilike", product_name])
+    if category:
+        domain.append(["categ_id.name", "ilike", category])
+    if profitability:
+        domain.append(["nivel_rentabilidad", "=", profitability])
+
+    client = get_client()
+    records = client.search_read(
+        "product.template",
+        domain=domain,
+        fields=[
+            "name", "default_code", "categ_id",
+            "list_price", "standard_price",
+            "profit_amount", "markup_percent", "margen_bruto",
+            "precio_sugerido_margen", "nivel_rentabilidad",
+        ],
+        limit=limit,
+        order="margen_bruto asc",
+    )
+    count = client.search_count("product.template", domain=domain)
+    header = f"Product Margins: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Stock Discrepancy Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_stock_discrepancies(
+    product_name: str = "",
+    over_threshold: bool = False,
+    limit: int = 30,
+) -> str:
+    """Get stock inventory discrepancies from the stock_inventory_discrepancy module.
+
+    Shows the difference between theoretical and counted inventory quantities
+    during stock adjustments, with threshold-based alerts.
+
+    Args:
+        product_name: Filter by product name (partial match).
+        over_threshold: If True, only show items exceeding the discrepancy threshold.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = [["inventory_quantity_set", "=", True]]
+    if product_name:
+        domain.append(["product_id.name", "ilike", product_name])
+    if over_threshold:
+        domain.append(["has_over_discrepancy", "=", True])
+
+    client = get_client()
+    records = client.search_read(
+        "stock.quant",
+        domain=domain,
+        fields=[
+            "product_id", "location_id", "quantity",
+            "inventory_quantity", "inventory_diff_quantity",
+            "discrepancy_percent", "discrepancy_threshold",
+            "has_over_discrepancy",
+        ],
+        limit=limit,
+        order="discrepancy_percent desc",
+    )
+    count = client.search_count("stock.quant", domain=domain)
+    header = f"Stock Discrepancies: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Black Dog Business Overview Prompt
+# ---------------------------------------------------------------------------
+
+
+@mcp.prompt()
+def blackdog_daily_overview() -> str:
+    """Generate a comprehensive daily business overview for Black Dog Panama."""
+    return (
+        "Please give me a comprehensive daily business overview for Black Dog Panama:\n\n"
+        "1. **Audit Alerts**: Use get_audit_logs with severity='critical' and state='open'\n"
+        "2. **Expiring Products**: Use get_expiring_products with state='expired' and handled=False\n"
+        "3. **Pending Transfer Requests**: Use get_transfer_requests with state='submitted'\n"
+        "4. **Product Approval Queue**: Use get_product_requests with state='to_approve'\n"
+        "5. **Purchase Approvals Needed**: Use get_purchase_approval_status with approval_state='level1_required'\n"
+        "6. **Sales Performance**: Use get_sales_target_performance for the current month\n"
+        "7. **Customer Churn Risk**: Use get_customer_segmentation with churn_risk='alto'\n"
+        "8. **Pets with Overdue Vaccines**: Use get_pets_with_overdue_vaccines\n"
+        "9. **Pending Deliveries**: Use get_stock_pickings with state='assigned'\n"
+        "10. **Overdue Invoices**: Use get_contacts_with_overdue_invoices\n\n"
+        "Summarize key actions needed today with priorities."
+    )
+
+
+@mcp.prompt()
+def analyze_pet_owner(owner_name: str) -> str:
+    """Generate a prompt to analyze a pet owner's complete profile."""
+    return (
+        f"Please analyze the pet owner '{owner_name}' in the Black Dog system:\n\n"
+        f"1. Use search_partner to find the contact named '{owner_name}'\n"
+        f"2. Use get_pets with owner_name='{owner_name}' to see all their pets\n"
+        "3. For each pet, use get_pet_details to see service and vaccine history\n"
+        f"4. Use get_customer_segmentation to check their spending and loyalty data\n"
+        "5. Use get_pos_orders to see their recent purchases\n"
+        "6. Summarize: total pets, services needed, vaccination status, spending tier,\n"
+        "   and recommendations for engagement"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
