@@ -84,6 +84,52 @@ class CrmLead(models.Model):
             },
         }
 
+    def action_respondio_close_conversation(self):
+        """Close the conversation in respond.io via API."""
+        self.ensure_one()
+        contact = self.respondio_contact_id
+        if not contact:
+            return
+        account = contact.account_id
+        from ..services.respondio_api import RespondioAPI
+        from odoo.exceptions import UserError
+
+        api = RespondioAPI(account)
+        try:
+            api.set_conversation_status(contact.respondio_id, "close")
+        except Exception as exc:
+            raise UserError(f"Failed to close conversation: {exc}") from exc
+        if self.respondio_conversation_id:
+            self.respondio_conversation_id.status = "closed"
+        self.message_post(
+            body="Respond.io conversation closed from Odoo.",
+            message_type="comment",
+            subtype_xmlid="mail.mt_note",
+        )
+
+    def action_respondio_open_conversation(self):
+        """Re-open the conversation in respond.io via API."""
+        self.ensure_one()
+        contact = self.respondio_contact_id
+        if not contact:
+            return
+        account = contact.account_id
+        from ..services.respondio_api import RespondioAPI
+        from odoo.exceptions import UserError
+
+        api = RespondioAPI(account)
+        try:
+            api.set_conversation_status(contact.respondio_id, "open")
+        except Exception as exc:
+            raise UserError(f"Failed to open conversation: {exc}") from exc
+        if self.respondio_conversation_id:
+            self.respondio_conversation_id.status = "open"
+        self.message_post(
+            body="Respond.io conversation re-opened from Odoo.",
+            message_type="comment",
+            subtype_xmlid="mail.mt_note",
+        )
+
     def action_create_followup_activity(self):
         """Create a follow-up activity linked to respond.io conversation."""
         self.ensure_one()

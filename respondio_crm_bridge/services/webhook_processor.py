@@ -135,14 +135,31 @@ class WebhookProcessor:
     # Handler routing
     # ------------------------------------------------------------------
     def _get_handler(self, event_type):
+        """Map respond.io webhook event names to handlers.
+
+        Official event names (10 events):
+          message.created, contact.created, contact.updated,
+          contact.assignee_updated, contact.tag_updated,
+          contact.lifecycle_updated, conversation.opened,
+          conversation.closed, comment.created
+        We also accept legacy/alternative names for resilience.
+        """
         mapping = {
-            "message.received": self._handle_message_received,
+            # ---- Official respond.io webhook events ----
+            "message.created": self._handle_message_received,
             "contact.created": self._handle_contact_upsert,
             "contact.updated": self._handle_contact_upsert,
+            "contact.assignee_updated": self._handle_conversation_assigned,
+            "contact.tag_updated": self._handle_tag_change,
+            "contact.lifecycle_updated": self._handle_contact_upsert,
+            "conversation.opened": self._handle_conversation_upsert,
+            "conversation.closed": self._handle_conversation_closed,
+            "comment.created": self._handle_comment_created,
+            # ---- Legacy / alternative names ----
+            "message.received": self._handle_message_received,
             "conversation.created": self._handle_conversation_upsert,
             "conversation.updated": self._handle_conversation_upsert,
             "conversation.assigned": self._handle_conversation_assigned,
-            "conversation.closed": self._handle_conversation_closed,
             "tag.added": self._handle_tag_change,
             "tag.removed": self._handle_tag_change,
         }
@@ -464,7 +481,7 @@ class WebhookProcessor:
         self._mark_processed(log, related_conversation_id=conversation.id)
 
     def _handle_tag_change(self, payload, log):
-        """Tag added/removed on a contact."""
+        """Tag added/removed on a contact (contact.tag_updated)."""
         contact_data = payload.get("contact") or payload.get("data", {}).get("contact") or payload
         contact = self._upsert_contact(contact_data)
         if not contact:
@@ -483,4 +500,31 @@ class WebhookProcessor:
         self._mark_processed(
             log,
             related_partner_id=contact.partner_id.id if contact.partner_id else False,
+        )
+
+    def _handle_comment_created(self, payload, log):
+        """Internal comment added on a contact (comment.created)."""
+        data = payload.get("data", {}) if "data" in payload else payload
+        contact_data = data.get("contact") or payload.get("contact") or {}
+        contact = self._upsert_contact(contact_data) if contact_data.get("id") else None
+
+        comment_text = data.get("text") or data.get("comment", {}).get("text") or ""
+
+        # Post the comment as a chatter note on the most recent linked lead
+        if contact and contact.partner_id:
+            leads = self.env["crm.lead"].search(
+                [("respondio_contact_id", "=", contact.id)],
+                order="write_date desc",
+                limit=1,
+            )
+            if leads:
+                leads.message_post(
+                    body=f"Comment from respond.io: {comment_text}",
+                    message_type="comment",
+                    subtype_xmlid="mail.mt_note",
+                )
+
+        self._mark_processed(
+            log,
+            related_partner_id=contact.partner_id.id if contact and contact.partner_id else False,
         )

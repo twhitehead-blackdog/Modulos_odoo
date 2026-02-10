@@ -42,6 +42,17 @@
                         type="object"
                         icon="fa-comment"
                         invisible="not respondio_contact_id"/>
+                <button name="action_respondio_close_conversation"
+                        string="Close Conversation"
+                        type="object"
+                        icon="fa-times-circle"
+                        invisible="not respondio_contact_id"
+                        confirm="Close the conversation in respond.io?"/>
+                <button name="action_respondio_open_conversation"
+                        string="Re-open Conversation"
+                        type="object"
+                        icon="fa-refresh"
+                        invisible="not respondio_contact_id"/>
                 <button name="action_create_followup_activity"
                         string="Follow-up Activity"
                         type="object"

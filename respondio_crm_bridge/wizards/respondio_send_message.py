@@ -32,9 +32,8 @@ class RespondioSendMessageWizard(models.TransientModel):
 
         api = RespondioAPI(self.account_id)
         try:
-            api.send_message(
+            api.send_text_message(
                 self.respondio_contact_id.respondio_id,
-                self.respondio_contact_id.channel or "",
                 self.message,
             )
         except Exception as exc:

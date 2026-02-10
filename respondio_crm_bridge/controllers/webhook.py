@@ -1,4 +1,10 @@
-"""HTTP controller that receives respond.io webhook events."""
+"""HTTP controller that receives respond.io webhook events.
+
+Webhook payload format: ``{"event": "message.created", "data": {...}}``
+Signature header: ``x-respond-signature`` (HMAC-SHA256)
+Must return HTTP 200 within 5 seconds.
+Auto-disabled after 30+ errors in 30 minutes.
+"""
 
 import json
 import logging
@@ -21,22 +27,22 @@ class RespondioWebhookController(http.Controller):
         csrf=False,
     )
     def receive_webhook(self, account_id, **kwargs):
-        """Main webhook endpoint.
+        """Main webhook endpoint (JSON content-type).
 
         URL: ``POST /respondio/webhook/<account_id>``
-        Expects JSON body with at least ``event`` (type string) and payload data.
         """
         env = request.env(su=True)
 
-        # Resolve account
         account = env["respondio.account"].browse(account_id).exists()
         if not account or not account.active:
             _logger.warning("Webhook for unknown/inactive account %s", account_id)
             return {"status": "error", "message": "unknown account"}
 
-        # Read raw body for signature validation
         raw_body = request.httprequest.get_data()
-        signature = request.httprequest.headers.get("X-Signature", "")
+        signature = (
+            request.httprequest.headers.get("x-respond-signature")
+            or request.httprequest.headers.get("X-Signature", "")
+        )
 
         if not WebhookProcessor.validate_signature(
             account.webhook_secret, raw_body, signature
@@ -44,7 +50,6 @@ class RespondioWebhookController(http.Controller):
             _logger.warning("Invalid webhook signature for account %s", account_id)
             return {"status": "error", "message": "invalid signature"}
 
-        # Parse payload
         try:
             payload = json.loads(raw_body) if raw_body else {}
         except (json.JSONDecodeError, ValueError):
@@ -64,7 +69,6 @@ class RespondioWebhookController(http.Controller):
             event_type,
         )
 
-        # Process
         processor = WebhookProcessor(env, account)
         try:
             log = processor.process_event(event_type, payload)
@@ -82,8 +86,7 @@ class RespondioWebhookController(http.Controller):
             return {"status": "error", "message": "processing failed"}
 
     # ------------------------------------------------------------------
-    # Alternative HTTP endpoint (type="http") for providers that don't
-    # send application/json content-type.
+    # Fallback HTTP endpoint for non-JSON content-type
     # ------------------------------------------------------------------
     @http.route(
         "/respondio/webhook/http/<int:account_id>",
@@ -101,7 +104,10 @@ class RespondioWebhookController(http.Controller):
             return Response("unknown account", status=404)
 
         raw_body = request.httprequest.get_data()
-        signature = request.httprequest.headers.get("X-Signature", "")
+        signature = (
+            request.httprequest.headers.get("x-respond-signature")
+            or request.httprequest.headers.get("X-Signature", "")
+        )
 
         if not WebhookProcessor.validate_signature(
             account.webhook_secret, raw_body, signature
