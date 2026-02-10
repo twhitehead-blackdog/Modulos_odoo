@@ -2,7 +2,7 @@
 
 Servidor MCP (Model Context Protocol) para conectar Claude con instancias de Odoo 18 a través de XML-RPC.
 
-## Herramientas disponibles (37 tools)
+## Herramientas disponibles (43 tools)
 
 ### General / CRUD
 
@@ -100,6 +100,17 @@ Servidor MCP (Model Context Protocol) para conectar Claude con instancias de Odo
 | `get_chatter_messages` | Mensajes del chatter de un registro |
 | `get_activities` | Actividades programadas (pendientes, vencidas) |
 | `get_installed_modules` | Listar módulos instalados |
+
+### PDF / Documentos
+
+| Herramienta | Descripción |
+|---|---|
+| `parse_pdf` | Extraer texto y tablas de un PDF |
+| `parse_pdf_and_create_vendor_bill` | Analizar PDF de factura y preparar datos para crear factura de proveedor |
+| `create_vendor_bill` | Crear factura de proveedor con líneas (desde datos de un PDF) |
+| `create_purchase_order_with_lines` | Crear orden de compra con líneas (desde datos de un PDF) |
+| `create_sale_order_with_lines` | Crear orden de venta/cotización con líneas |
+| `attach_file_to_record` | Adjuntar archivo (PDF, imagen) a un registro de Odoo |
 
 ## Requisitos
 
@@ -247,6 +258,30 @@ Claude usará `search_records` en `account.move` con dominio:
 
 Claude usará `read_group_data` en `mrp.production` con `groupby="state"`.
 
+### Procesar factura de proveedor desde PDF
+> "Tengo esta factura en PDF, créala como factura de proveedor en Odoo"
+> (le proporcionas la ruta al archivo PDF)
+
+Claude realizará:
+1. `parse_pdf_and_create_vendor_bill` para extraer texto y tablas del PDF
+2. Analizará los datos (proveedor, fecha, líneas, montos)
+3. `create_vendor_bill` con los datos extraídos
+4. `attach_file_to_record` para adjuntar el PDF original al registro
+
+### Crear orden de compra desde un PDF
+> "Procesa este PDF como orden de compra: /tmp/orden_compra.pdf"
+
+Claude realizará:
+1. `parse_pdf` para leer el documento
+2. Identificará proveedor, productos, cantidades y precios
+3. `create_purchase_order_with_lines` para crear la OC en Odoo
+4. `attach_file_to_record` para adjuntar el original
+
+### Leer contenido de cualquier PDF
+> "Qué dice este PDF? /home/user/documento.pdf"
+
+Claude usará `parse_pdf` y te mostrará el texto, tablas y montos detectados.
+
 ## Desarrollo
 
 ```bash
@@ -272,6 +307,7 @@ uv run odoo18-mcp-server
         ├── __init__.py
         ├── config.py           # Gestión de configuración
         ├── odoo_client.py      # Cliente XML-RPC para Odoo
+        ├── pdf_parser.py       # Extracción de datos de PDFs
         └── server.py           # Servidor MCP con todas las herramientas
 ```
 

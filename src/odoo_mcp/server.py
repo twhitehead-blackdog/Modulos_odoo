@@ -1545,6 +1545,480 @@ def get_sales_summary(
 
 
 # ---------------------------------------------------------------------------
+# PDF / Document Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def parse_pdf(file_path: str) -> str:
+    """Extract text and tables from a PDF file.
+
+    Use this tool to read the content of a PDF (invoice, purchase order,
+    delivery note, etc.) so you can then analyze it and create records in Odoo.
+
+    Args:
+        file_path: Absolute path to the PDF file on the local filesystem.
+    """
+    from .pdf_parser import extract_pdf_content, format_tables_as_text, extract_amounts_from_text
+
+    content = extract_pdf_content(file_path)
+    parts = [
+        f"PDF: {file_path}",
+        f"Pages: {content.pages}",
+        "",
+        "=== EXTRACTED TEXT ===",
+        content.text or "(no text extracted)",
+    ]
+
+    if content.tables:
+        parts.append("")
+        parts.append("=== EXTRACTED TABLES ===")
+        parts.append(format_tables_as_text(content.tables))
+
+    amounts = extract_amounts_from_text(content.text)
+    if any(amounts.values()):
+        parts.append("")
+        parts.append("=== DETECTED AMOUNTS ===")
+        if amounts["totals"]:
+            parts.append(f"Totals: {', '.join(amounts['totals'])}")
+        if amounts["taxes"]:
+            parts.append(f"Taxes: {', '.join(amounts['taxes'])}")
+        if amounts["amounts"]:
+            parts.append(f"Other amounts: {', '.join(amounts['amounts'][:20])}")
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def create_vendor_bill(
+    partner_name: str,
+    invoice_date: str,
+    ref: str = "",
+    lines_json: str = "[]",
+    currency: str = "",
+) -> str:
+    """Create a vendor bill (purchase invoice) in Odoo with its lines.
+
+    Use this after parsing a PDF invoice to create the bill in Odoo.
+    Claude should analyze the PDF content and extract the necessary data.
+
+    Args:
+        partner_name: Vendor name. Will search for an existing partner in Odoo.
+                      If not found, a new one will be created.
+        invoice_date: Invoice date in YYYY-MM-DD format.
+        ref: Vendor reference / invoice number from the supplier's document.
+        lines_json: JSON array of invoice lines. Each line should have:
+                    - "name": Description of the product/service
+                    - "quantity": Quantity (default 1)
+                    - "price_unit": Unit price
+                    - "product_name": (optional) Product name to search in Odoo
+                    Example:
+                    '[{"name": "Laptop Dell XPS 15", "quantity": 2, "price_unit": 1500.00},
+                      {"name": "Mouse Logitech", "quantity": 5, "price_unit": 25.00}]'
+        currency: Currency code (e.g. 'USD', 'EUR', 'MXN'). Leave empty for company default.
+    """
+    client = get_client()
+
+    # Find or create partner
+    partner_id = _find_or_create_partner(client, partner_name, supplier=True)
+
+    # Find currency if specified
+    currency_id = False
+    if currency:
+        currencies = client.search_read(
+            "res.currency",
+            domain=[["name", "=", currency.upper()]],
+            fields=["id"],
+            limit=1,
+        )
+        if currencies:
+            currency_id = currencies[0]["id"]
+
+    # Build invoice lines
+    lines = json.loads(lines_json)
+    invoice_lines = []
+    for line in lines:
+        line_vals: dict[str, Any] = {
+            "name": line.get("name", ""),
+            "quantity": line.get("quantity", 1),
+            "price_unit": line.get("price_unit", 0),
+        }
+
+        # Try to find product by name
+        product_name = line.get("product_name") or line.get("name", "")
+        if product_name:
+            products = client.name_search(
+                "product.product", name=product_name, limit=1
+            )
+            if products:
+                line_vals["product_id"] = products[0][0]
+
+        # Tax handling - if tax_amount is specified, try to find matching tax
+        if line.get("tax_amount"):
+            tax_amount = float(line["tax_amount"])
+            taxes = client.search_read(
+                "account.tax",
+                domain=[
+                    ["type_tax_use", "=", "purchase"],
+                    ["amount", "=", tax_amount],
+                ],
+                fields=["id"],
+                limit=1,
+            )
+            if taxes:
+                line_vals["tax_ids"] = [[6, 0, [taxes[0]["id"]]]]
+
+        invoice_lines.append([0, 0, line_vals])
+
+    # Create the vendor bill
+    bill_vals: dict[str, Any] = {
+        "move_type": "in_invoice",
+        "partner_id": partner_id,
+        "invoice_date": invoice_date,
+        "invoice_line_ids": invoice_lines,
+    }
+    if ref:
+        bill_vals["ref"] = ref
+    if currency_id:
+        bill_vals["currency_id"] = currency_id
+
+    bill_id = client.create("account.move", bill_vals)
+
+    # Read back the created bill for confirmation
+    bill = client.read(
+        "account.move",
+        [bill_id],
+        fields=["name", "partner_id", "amount_total", "state", "currency_id"],
+    )
+    bill_data = bill[0] if bill else {}
+    return (
+        f"Vendor bill created successfully!\n"
+        f"- ID: {bill_id}\n"
+        f"- Number: {bill_data.get('name', 'Draft')}\n"
+        f"- Vendor: {bill_data.get('partner_id', ['', partner_name])[1]}\n"
+        f"- Total: {bill_data.get('amount_total', 0):,.2f}\n"
+        f"- State: {bill_data.get('state', 'draft')}\n"
+        f"- Lines: {len(lines)}\n\n"
+        f"Use attach_file_to_record to attach the original PDF to this bill."
+    )
+
+
+@mcp.tool()
+def create_purchase_order_with_lines(
+    partner_name: str,
+    lines_json: str = "[]",
+    date_order: str = "",
+    notes: str = "",
+    currency: str = "",
+) -> str:
+    """Create a purchase order in Odoo with its lines.
+
+    Use this after parsing a PDF purchase order or quotation from a supplier.
+
+    Args:
+        partner_name: Vendor name. Will search for an existing partner.
+        lines_json: JSON array of order lines. Each line should have:
+                    - "name": Description (optional if product found)
+                    - "product_name": Product name to search in Odoo
+                    - "product_qty": Quantity
+                    - "price_unit": Unit price
+                    Example:
+                    '[{"product_name": "Laptop Dell", "product_qty": 2, "price_unit": 1500},
+                      {"product_name": "Mouse", "product_qty": 5, "price_unit": 25}]'
+        date_order: Order date in YYYY-MM-DD format. Leave empty for today.
+        notes: Internal notes for the purchase order.
+        currency: Currency code (e.g. 'USD', 'EUR', 'MXN'). Leave empty for default.
+    """
+    client = get_client()
+
+    # Find or create partner
+    partner_id = _find_or_create_partner(client, partner_name, supplier=True)
+
+    # Find currency if specified
+    currency_id = False
+    if currency:
+        currencies = client.search_read(
+            "res.currency",
+            domain=[["name", "=", currency.upper()]],
+            fields=["id"],
+            limit=1,
+        )
+        if currencies:
+            currency_id = currencies[0]["id"]
+
+    # Build order lines
+    lines = json.loads(lines_json)
+    order_lines = []
+    for line in lines:
+        line_vals: dict[str, Any] = {
+            "name": line.get("name", line.get("product_name", "Product")),
+            "product_qty": line.get("product_qty", line.get("quantity", 1)),
+            "price_unit": line.get("price_unit", 0),
+        }
+
+        # Try to find product
+        product_name = line.get("product_name") or line.get("name", "")
+        if product_name:
+            products = client.name_search(
+                "product.product", name=product_name, limit=1
+            )
+            if products:
+                line_vals["product_id"] = products[0][0]
+                # If product found, get its UOM
+                product_data = client.read(
+                    "product.product", [products[0][0]], fields=["uom_po_id"]
+                )
+                if product_data and product_data[0].get("uom_po_id"):
+                    line_vals["product_uom"] = product_data[0]["uom_po_id"][0]
+
+        order_lines.append([0, 0, line_vals])
+
+    # Create the PO
+    po_vals: dict[str, Any] = {
+        "partner_id": partner_id,
+        "order_line": order_lines,
+    }
+    if date_order:
+        po_vals["date_order"] = date_order
+    if notes:
+        po_vals["notes"] = notes
+    if currency_id:
+        po_vals["currency_id"] = currency_id
+
+    po_id = client.create("purchase.order", po_vals)
+
+    # Read back
+    po = client.read(
+        "purchase.order",
+        [po_id],
+        fields=["name", "partner_id", "amount_total", "state", "currency_id"],
+    )
+    po_data = po[0] if po else {}
+    return (
+        f"Purchase order created successfully!\n"
+        f"- ID: {po_id}\n"
+        f"- Number: {po_data.get('name', 'New')}\n"
+        f"- Vendor: {po_data.get('partner_id', ['', partner_name])[1]}\n"
+        f"- Total: {po_data.get('amount_total', 0):,.2f}\n"
+        f"- State: {po_data.get('state', 'draft')}\n"
+        f"- Lines: {len(lines)}\n\n"
+        f"Use attach_file_to_record to attach the original PDF."
+    )
+
+
+@mcp.tool()
+def create_sale_order_with_lines(
+    partner_name: str,
+    lines_json: str = "[]",
+    date_order: str = "",
+    notes: str = "",
+) -> str:
+    """Create a sale order (quotation) in Odoo with its lines.
+
+    Use this after parsing a PDF or when creating a quotation from extracted data.
+
+    Args:
+        partner_name: Customer name. Will search for an existing partner.
+        lines_json: JSON array of order lines. Each line should have:
+                    - "product_name": Product name to search in Odoo
+                    - "product_uom_qty": Quantity
+                    - "price_unit": Unit price (optional, uses product price if omitted)
+                    - "discount": Discount percentage (optional)
+                    Example:
+                    '[{"product_name": "Laptop", "product_uom_qty": 2, "price_unit": 1999.99}]'
+        date_order: Order date in YYYY-MM-DD format. Leave empty for today.
+        notes: Note added to the order (visible to customer on the quotation).
+    """
+    client = get_client()
+
+    partner_id = _find_or_create_partner(client, partner_name, supplier=False)
+
+    lines = json.loads(lines_json)
+    order_lines = []
+    for line in lines:
+        line_vals: dict[str, Any] = {
+            "name": line.get("name", line.get("product_name", "Product")),
+            "product_uom_qty": line.get("product_uom_qty", line.get("quantity", 1)),
+        }
+        if "price_unit" in line:
+            line_vals["price_unit"] = line["price_unit"]
+        if "discount" in line:
+            line_vals["discount"] = line["discount"]
+
+        product_name = line.get("product_name") or line.get("name", "")
+        if product_name:
+            products = client.name_search(
+                "product.product", name=product_name, limit=1
+            )
+            if products:
+                line_vals["product_id"] = products[0][0]
+
+        order_lines.append([0, 0, line_vals])
+
+    so_vals: dict[str, Any] = {
+        "partner_id": partner_id,
+        "order_line": order_lines,
+    }
+    if date_order:
+        so_vals["date_order"] = date_order
+    if notes:
+        so_vals["note"] = notes
+
+    so_id = client.create("sale.order", so_vals)
+
+    so = client.read(
+        "sale.order",
+        [so_id],
+        fields=["name", "partner_id", "amount_total", "state"],
+    )
+    so_data = so[0] if so else {}
+    return (
+        f"Sale order created successfully!\n"
+        f"- ID: {so_id}\n"
+        f"- Number: {so_data.get('name', 'New')}\n"
+        f"- Customer: {so_data.get('partner_id', ['', partner_name])[1]}\n"
+        f"- Total: {so_data.get('amount_total', 0):,.2f}\n"
+        f"- State: {so_data.get('state', 'draft')}\n"
+        f"- Lines: {len(lines)}"
+    )
+
+
+@mcp.tool()
+def attach_file_to_record(
+    file_path: str,
+    model: str,
+    record_id: int,
+    description: str = "",
+) -> str:
+    """Attach a file (PDF, image, etc.) to an Odoo record.
+
+    Use this to attach the original PDF document to the invoice, purchase order,
+    or any other record created from it.
+
+    Args:
+        file_path: Absolute path to the file on the local filesystem.
+        model: The model of the record (e.g. 'account.move', 'purchase.order').
+        record_id: The ID of the record to attach the file to.
+        description: Optional description for the attachment.
+    """
+    import base64
+    from pathlib import Path
+
+    path = Path(file_path)
+    if not path.exists():
+        return f"Error: File not found: {file_path}"
+
+    file_content = path.read_bytes()
+    encoded = base64.b64encode(file_content).decode("utf-8")
+
+    client = get_client()
+    attachment_vals = {
+        "name": path.name,
+        "datas": encoded,
+        "res_model": model,
+        "res_id": record_id,
+        "type": "binary",
+    }
+    if description:
+        attachment_vals["description"] = description
+
+    att_id = client.create("ir.attachment", attachment_vals)
+    size_kb = len(file_content) / 1024
+    return (
+        f"File attached successfully!\n"
+        f"- Attachment ID: {att_id}\n"
+        f"- File: {path.name} ({size_kb:.1f} KB)\n"
+        f"- Attached to: {model} #{record_id}"
+    )
+
+
+@mcp.tool()
+def parse_pdf_and_create_vendor_bill(
+    file_path: str,
+) -> str:
+    """Parse a PDF invoice and return structured data ready to create a vendor bill.
+
+    This tool extracts all text and tables from the PDF and returns a structured
+    analysis. After reviewing the output, use create_vendor_bill to create the
+    actual bill in Odoo with the correct data.
+
+    This is a convenience tool that combines parse_pdf with guidance
+    on how to interpret the results for vendor bill creation.
+
+    Args:
+        file_path: Absolute path to the PDF invoice file.
+    """
+    from .pdf_parser import extract_pdf_content, format_tables_as_text, extract_amounts_from_text
+
+    content = extract_pdf_content(file_path)
+    amounts = extract_amounts_from_text(content.text)
+
+    parts = [
+        "=== PDF INVOICE ANALYSIS ===",
+        f"File: {file_path}",
+        f"Pages: {content.pages}",
+        "",
+        "=== FULL TEXT ===",
+        content.text or "(no text extracted - the PDF may be scanned/image-based)",
+        "",
+    ]
+
+    if content.tables:
+        parts.append("=== TABLES (likely contain line items) ===")
+        parts.append(format_tables_as_text(content.tables))
+        parts.append("")
+
+    if any(amounts.values()):
+        parts.append("=== DETECTED AMOUNTS ===")
+        if amounts["totals"]:
+            parts.append(f"Totals found: {', '.join(amounts['totals'])}")
+        if amounts["taxes"]:
+            parts.append(f"Taxes found: {', '.join(amounts['taxes'])}")
+        if amounts["amounts"]:
+            parts.append(f"Other amounts: {', '.join(amounts['amounts'][:15])}")
+        parts.append("")
+
+    parts.append(
+        "=== NEXT STEPS ===\n"
+        "Now analyze the extracted data above and use create_vendor_bill with:\n"
+        "1. partner_name: The vendor/supplier name found in the document\n"
+        "2. invoice_date: The invoice date (convert to YYYY-MM-DD)\n"
+        "3. ref: The vendor's invoice number/reference\n"
+        "4. lines_json: Array of lines with name, quantity, price_unit\n"
+        "5. currency: The currency if identifiable\n\n"
+        "Then use attach_file_to_record to attach the original PDF."
+    )
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+def _find_or_create_partner(
+    client: OdooClient, name: str, supplier: bool = False
+) -> int:
+    """Find a partner by name or create a new one."""
+    results = client.name_search("res.partner", name=name, limit=5)
+    if results:
+        # Return the best match
+        return results[0][0]
+
+    # Create new partner
+    vals: dict[str, Any] = {"name": name}
+    if supplier:
+        vals["supplier_rank"] = 1
+    else:
+        vals["customer_rank"] = 1
+
+    partner_id = client.create("res.partner", vals)
+    logger.info("Created new partner '%s' with ID %s", name, partner_id)
+    return partner_id
+
+
+# ---------------------------------------------------------------------------
 # Resources
 # ---------------------------------------------------------------------------
 
@@ -1631,6 +2105,45 @@ def daily_overview() -> str:
         "3. Use get_stock_pickings with state='assigned' to see ready deliveries\n"
         "4. Use get_contacts_with_overdue_invoices for collections follow-up\n"
         "5. Summarize key actions needed today"
+    )
+
+
+@mcp.prompt()
+def process_pdf_invoice(file_path: str) -> str:
+    """Generate a prompt to process a PDF invoice into Odoo."""
+    return (
+        f"I have a PDF invoice at: {file_path}\n\n"
+        "Please follow these steps:\n"
+        f"1. Use parse_pdf_and_create_vendor_bill to extract and analyze the PDF content\n"
+        "2. From the extracted text and tables, identify:\n"
+        "   - Vendor/supplier name\n"
+        "   - Invoice date\n"
+        "   - Invoice number (reference)\n"
+        "   - Line items (description, quantity, unit price)\n"
+        "   - Tax amounts if present\n"
+        "   - Total amount\n"
+        "   - Currency\n"
+        "3. Use create_vendor_bill with the extracted data\n"
+        f"4. Use attach_file_to_record to attach the original PDF ({file_path}) to the created bill\n"
+        "5. Show me a summary of what was created"
+    )
+
+
+@mcp.prompt()
+def process_pdf_purchase_order(file_path: str) -> str:
+    """Generate a prompt to process a PDF into a purchase order."""
+    return (
+        f"I have a PDF document at: {file_path}\n\n"
+        "Please follow these steps:\n"
+        f"1. Use parse_pdf to extract the content\n"
+        "2. From the extracted data, identify:\n"
+        "   - Vendor/supplier name\n"
+        "   - Order date\n"
+        "   - Line items (product, quantity, unit price)\n"
+        "   - Currency\n"
+        "3. Use create_purchase_order_with_lines with the extracted data\n"
+        f"4. Use attach_file_to_record to attach the original PDF\n"
+        "5. Show me a summary of what was created"
     )
 
 
