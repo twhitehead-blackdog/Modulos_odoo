@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_respondio_send_message_wizard_form" model="ir.ui.view">
+        <field name="name">respondio.send.message.wizard.form</field>
+        <field name="model">respondio.send.message.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Send Message via Respond.io">
+                <group>
+                    <field name="lead_id" invisible="1"/>
+                    <field name="account_id" invisible="1"/>
+                    <field name="respondio_contact_id" readonly="1"/>
+                    <field name="message" widget="text"
+                           placeholder="Type your message here..."/>
+                </group>
+                <footer>
+                    <button name="action_send" string="Send" type="object"
+                            class="oe_highlight" icon="fa-paper-plane"/>
+                    <button string="Cancel" class="oe_link" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

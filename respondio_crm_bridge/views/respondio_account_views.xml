@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================================ -->
+    <!-- respondio.account — Form                                     -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_account_form" model="ir.ui.view">
+        <field name="name">respondio.account.form</field>
+        <field name="model">respondio.account</field>
+        <field name="arch" type="xml">
+            <form string="Respond.io Account">
+                <header>
+                    <button name="action_test_connection"
+                            string="Test Connection"
+                            type="object"
+                            class="oe_highlight"
+                            icon="fa-plug"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_contacts"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-address-book">
+                            <field name="contact_count" widget="statinfo" string="Contacts"/>
+                        </button>
+                        <button name="action_view_conversations"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-comments">
+                            <field name="conversation_count" widget="statinfo" string="Conversations"/>
+                        </button>
+                        <button name="action_view_events"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-list">
+                            <field name="event_count" widget="statinfo" string="Events"/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="Account Name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="API Configuration">
+                            <field name="api_base_url"/>
+                            <field name="api_token" password="True"/>
+                            <field name="webhook_secret" password="True"/>
+                            <field name="respondio_space_url"
+                                   placeholder="https://app.respond.io/space/12345"/>
+                        </group>
+                        <group string="Company &amp; Defaults">
+                            <field name="company_id"
+                                   groups="base.group_multi_company"/>
+                            <field name="default_team_id"/>
+                            <field name="default_user_id"/>
+                            <field name="default_lead_stage_id"/>
+                            <field name="active" invisible="1"/>
+                        </group>
+                    </group>
+                    <group string="Behaviour">
+                        <group>
+                            <field name="create_partner_on_new_contact"/>
+                            <field name="enable_outbound_messages"/>
+                            <field name="enable_push_partner_updates"/>
+                        </group>
+                        <group>
+                            <field name="auto_create_activity_on_inbound"/>
+                            <field name="activity_type_id"
+                                   invisible="not auto_create_activity_on_inbound"/>
+                            <field name="activity_delay_hours"
+                                   invisible="not auto_create_activity_on_inbound"/>
+                        </group>
+                    </group>
+                    <group string="Status">
+                        <field name="last_sync_at"/>
+                    </group>
+                    <separator string="Webhook URL"/>
+                    <div class="alert alert-info" role="alert">
+                        <p>
+                            Configure this URL in your respond.io webhook settings:
+                        </p>
+                        <p>
+                            <strong>JSON endpoint:</strong>
+                            <code>https://YOUR_ODOO_DOMAIN/respondio/webhook/<field name="id" readonly="1"/></code>
+                        </p>
+                        <p>
+                            <strong>HTTP fallback:</strong>
+                            <code>https://YOUR_ODOO_DOMAIN/respondio/webhook/http/<field name="id" readonly="1"/></code>
+                        </p>
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.account — List                                     -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_account_list" model="ir.ui.view">
+        <field name="name">respondio.account.list</field>
+        <field name="model">respondio.account</field>
+        <field name="arch" type="xml">
+            <list string="Respond.io Accounts">
+                <field name="name"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="api_base_url"/>
+                <field name="default_team_id"/>
+                <field name="last_sync_at"/>
+                <field name="active" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.account — Action                                   -->
+    <!-- ============================================================ -->
+    <record id="action_respondio_account" model="ir.actions.act_window">
+        <field name="name">Respond.io Accounts</field>
+        <field name="res_model">respondio.account</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add your first respond.io account
+            </p>
+            <p>
+                Configure the API token and webhook secret to start
+                receiving events from respond.io.
+            </p>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================================ -->
+    <!-- res.partner — Respond.io block on form                       -->
+    <!-- ============================================================ -->
+    <record id="view_res_partner_form_respondio" model="ir.ui.view">
+        <field name="name">res.partner.form.respondio</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside">
+                <separator string="Respond.io"
+                           invisible="not respondio_contact_id"/>
+                <group invisible="not respondio_contact_id">
+                    <group>
+                        <field name="respondio_contact_id"/>
+                        <field name="respondio_tags"/>
+                    </group>
+                    <group>
+                        <field name="respondio_last_seen_at"/>
+                        <field name="respondio_url" widget="url"/>
+                    </group>
+                </group>
+            </xpath>
+            <xpath expr="//header" position="inside">
+                <button name="action_open_in_respondio"
+                        string="Open in Respond.io"
+                        type="object"
+                        icon="fa-external-link"
+                        invisible="not respondio_url"/>
+                <button name="action_create_opportunity_from_respondio"
+                        string="Create Opportunity"
+                        type="object"
+                        icon="fa-plus"
+                        invisible="not respondio_contact_id"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

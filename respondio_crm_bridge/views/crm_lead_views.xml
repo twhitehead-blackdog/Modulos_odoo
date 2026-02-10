@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================================ -->
+    <!-- crm.lead — Respond.io group on form                          -->
+    <!-- ============================================================ -->
+    <record id="view_crm_lead_form_respondio" model="ir.ui.view">
+        <field name="name">crm.lead.form.respondio</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside">
+                <separator string="Respond.io"
+                           invisible="not respondio_conversation_id"/>
+                <group invisible="not respondio_conversation_id">
+                    <group>
+                        <field name="respondio_channel"/>
+                        <field name="respondio_last_message_at"/>
+                        <field name="respondio_assignee_name"/>
+                        <field name="respondio_tags"/>
+                    </group>
+                    <group>
+                        <field name="respondio_conversation_id"/>
+                        <field name="respondio_contact_id"/>
+                        <field name="respondio_url" widget="url"/>
+                    </group>
+                </group>
+            </xpath>
+            <!-- Buttons in header -->
+            <xpath expr="//header" position="inside">
+                <button name="action_open_in_respondio"
+                        string="Open in Respond.io"
+                        type="object"
+                        icon="fa-external-link"
+                        invisible="not respondio_url"/>
+                <button name="action_respondio_send_message"
+                        string="Send Message"
+                        type="object"
+                        icon="fa-paper-plane"
+                        invisible="not respondio_contact_id"/>
+                <button name="action_create_followup_activity"
+                        string="Follow-up Activity"
+                        type="object"
+                        icon="fa-clock-o"
+                        invisible="not respondio_conversation_id"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- crm.lead — List columns (optional)                           -->
+    <!-- ============================================================ -->
+    <record id="view_crm_lead_list_respondio" model="ir.ui.view">
+        <field name="name">crm.lead.list.respondio</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_case_tree_view_leads"/>
+        <field name="arch" type="xml">
+            <xpath expr="//list" position="inside">
+                <field name="respondio_channel" optional="hide"/>
+                <field name="respondio_last_message_at" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,14 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_respondio_account_admin,respondio.account admin,model_respondio_account,group_respondio_admin,1,1,1,1
+access_respondio_account_sales,respondio.account sales (read),model_respondio_account,group_respondio_sales,1,0,0,0
+access_respondio_contact_admin,respondio.contact admin,model_respondio_contact,group_respondio_admin,1,1,1,1
+access_respondio_contact_sales,respondio.contact sales,model_respondio_contact,group_respondio_sales,1,1,1,0
+access_respondio_contact_readonly,respondio.contact readonly,model_respondio_contact,group_respondio_readonly,1,0,0,0
+access_respondio_conversation_admin,respondio.conversation admin,model_respondio_conversation,group_respondio_admin,1,1,1,1
+access_respondio_conversation_sales,respondio.conversation sales,model_respondio_conversation,group_respondio_sales,1,1,0,0
+access_respondio_conversation_readonly,respondio.conversation readonly,model_respondio_conversation,group_respondio_readonly,1,0,0,0
+access_respondio_event_log_admin,respondio.event.log admin,model_respondio_event_log,group_respondio_admin,1,1,1,1
+access_respondio_event_log_sales,respondio.event.log sales (read),model_respondio_event_log,group_respondio_sales,1,0,0,0
+access_respondio_event_log_readonly,respondio.event.log readonly,model_respondio_event_log,group_respondio_readonly,1,0,0,0
+access_respondio_send_message_wizard_sales,respondio.send.message.wizard sales,model_respondio_send_message_wizard,group_respondio_sales,1,1,1,0
+access_respondio_send_message_wizard_admin,respondio.send.message.wizard admin,model_respondio_send_message_wizard,group_respondio_admin,1,1,1,1

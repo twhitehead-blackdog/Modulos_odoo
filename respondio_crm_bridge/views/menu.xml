@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================================ -->
+    <!-- Top-level menu under CRM                                     -->
+    <!-- ============================================================ -->
+    <menuitem id="menu_respondio_root"
+              name="Respond.io"
+              parent="crm.crm_menu_root"
+              sequence="90"
+              groups="respondio_crm_bridge.group_respondio_readonly"/>
+
+    <!-- Sub-menus -->
+    <menuitem id="menu_respondio_conversations"
+              name="Conversations"
+              parent="menu_respondio_root"
+              action="action_respondio_conversation"
+              sequence="10"/>
+
+    <menuitem id="menu_respondio_contacts"
+              name="Contacts"
+              parent="menu_respondio_root"
+              action="action_respondio_contact"
+              sequence="20"/>
+
+    <menuitem id="menu_respondio_event_log"
+              name="Event Log"
+              parent="menu_respondio_root"
+              action="action_respondio_event_log"
+              sequence="30"
+              groups="respondio_crm_bridge.group_respondio_sales"/>
+
+    <!-- Configuration (under Settings) -->
+    <menuitem id="menu_respondio_config_root"
+              name="Respond.io"
+              parent="crm.crm_menu_config"
+              sequence="90"
+              groups="respondio_crm_bridge.group_respondio_admin"/>
+
+    <menuitem id="menu_respondio_accounts"
+              name="Accounts"
+              parent="menu_respondio_config_root"
+              action="action_respondio_account"
+              sequence="10"/>
+</odoo>

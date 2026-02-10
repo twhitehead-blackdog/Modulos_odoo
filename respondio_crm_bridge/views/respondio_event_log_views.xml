@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================================ -->
+    <!-- respondio.event.log — Form                                   -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_event_log_form" model="ir.ui.view">
+        <field name="name">respondio.event.log.form</field>
+        <field name="model">respondio.event.log</field>
+        <field name="arch" type="xml">
+            <form string="Event Log" create="0">
+                <header>
+                    <button name="action_retry"
+                            string="Retry"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-refresh"
+                            invisible="status != 'error'"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Event">
+                            <field name="event_type"/>
+                            <field name="event_id"/>
+                            <field name="status"
+                                   decoration-danger="status == 'error'"
+                                   decoration-success="status == 'processed'"
+                                   decoration-warning="status == 'ignored'"
+                                   widget="badge"/>
+                            <field name="received_at"/>
+                            <field name="processed_at"/>
+                            <field name="retry_count"/>
+                        </group>
+                        <group string="Related Records">
+                            <field name="account_id"/>
+                            <field name="related_lead_id"/>
+                            <field name="related_partner_id"/>
+                            <field name="related_conversation_id"/>
+                        </group>
+                    </group>
+                    <group string="Error" invisible="not error_message">
+                        <field name="error_message"/>
+                    </group>
+                    <group string="Payload"
+                           groups="respondio_crm_bridge.group_respondio_admin">
+                        <field name="payload" widget="text"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.event.log — List                                   -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_event_log_list" model="ir.ui.view">
+        <field name="name">respondio.event.log.list</field>
+        <field name="model">respondio.event.log</field>
+        <field name="arch" type="xml">
+            <list string="Event Log" create="0"
+                  decoration-danger="status == 'error'"
+                  decoration-muted="status == 'ignored'">
+                <field name="received_at"/>
+                <field name="event_type"/>
+                <field name="event_id"/>
+                <field name="status" widget="badge"/>
+                <field name="related_lead_id"/>
+                <field name="related_partner_id"/>
+                <field name="error_message"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.event.log — Search                                 -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_event_log_search" model="ir.ui.view">
+        <field name="name">respondio.event.log.search</field>
+        <field name="model">respondio.event.log</field>
+        <field name="arch" type="xml">
+            <search string="Event Log">
+                <field name="event_type"/>
+                <field name="event_id"/>
+                <field name="related_lead_id"/>
+                <field name="related_partner_id"/>
+                <filter name="errors" string="Errors"
+                        domain="[('status','=','error')]"/>
+                <filter name="processed" string="Processed"
+                        domain="[('status','=','processed')]"/>
+                <filter name="today" string="Today"
+                        domain="[('received_at','>=', (context_today()).strftime('%%Y-%%m-%%d'))]"/>
+                <separator/>
+                <group expand="0" string="Group By">
+                    <filter name="group_type" string="Event Type"
+                            context="{'group_by': 'event_type'}"/>
+                    <filter name="group_status" string="Status"
+                            context="{'group_by': 'status'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.event.log — Action                                 -->
+    <!-- ============================================================ -->
+    <record id="action_respondio_event_log" model="ir.actions.act_window">
+        <field name="name">Event Log</field>
+        <field name="res_model">respondio.event.log</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_errors': 0}</field>
+    </record>
+</odoo>

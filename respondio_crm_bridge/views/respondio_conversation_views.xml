@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================================ -->
+    <!-- respondio.conversation — Form                                -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_conversation_form" model="ir.ui.view">
+        <field name="name">respondio.conversation.form</field>
+        <field name="model">respondio.conversation</field>
+        <field name="arch" type="xml">
+            <form string="Respond.io Conversation" create="0">
+                <header>
+                    <button name="action_open_in_respondio"
+                            string="Open in Respond.io"
+                            type="object"
+                            class="oe_highlight"
+                            icon="fa-external-link"
+                            invisible="not respondio_url"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Conversation">
+                            <field name="respondio_id"/>
+                            <field name="channel"/>
+                            <field name="status"/>
+                            <field name="assignee_name"/>
+                            <field name="last_message_at"/>
+                            <field name="last_event_at"/>
+                            <field name="respondio_url" widget="url"/>
+                        </group>
+                        <group string="Linked Records">
+                            <field name="account_id"/>
+                            <field name="respondio_contact_id"/>
+                            <field name="partner_id"/>
+                            <field name="lead_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.conversation — List                                -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_conversation_list" model="ir.ui.view">
+        <field name="name">respondio.conversation.list</field>
+        <field name="model">respondio.conversation</field>
+        <field name="arch" type="xml">
+            <list string="Conversations" create="0"
+                  decoration-danger="status == 'closed'"
+                  decoration-success="status == 'open'"
+                  decoration-warning="status == 'pending'">
+                <field name="respondio_id"/>
+                <field name="respondio_contact_id"/>
+                <field name="partner_id"/>
+                <field name="lead_id"/>
+                <field name="channel"/>
+                <field name="status"/>
+                <field name="assignee_name"/>
+                <field name="last_message_at"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.conversation — Search                              -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_conversation_search" model="ir.ui.view">
+        <field name="name">respondio.conversation.search</field>
+        <field name="model">respondio.conversation</field>
+        <field name="arch" type="xml">
+            <search string="Conversations">
+                <field name="respondio_id"/>
+                <field name="respondio_contact_id"/>
+                <field name="partner_id"/>
+                <field name="lead_id"/>
+                <field name="assignee_name"/>
+                <filter name="open" string="Open" domain="[('status','=','open')]"/>
+                <filter name="pending" string="Pending" domain="[('status','=','pending')]"/>
+                <filter name="closed" string="Closed" domain="[('status','=','closed')]"/>
+                <separator/>
+                <group expand="0" string="Group By">
+                    <filter name="group_status" string="Status" context="{'group_by': 'status'}"/>
+                    <filter name="group_channel" string="Channel" context="{'group_by': 'channel'}"/>
+                    <filter name="group_assignee" string="Agent" context="{'group_by': 'assignee_name'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.conversation — Action                              -->
+    <!-- ============================================================ -->
+    <record id="action_respondio_conversation" model="ir.actions.act_window">
+        <field name="name">Conversations</field>
+        <field name="res_model">respondio.conversation</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- respondio.contact — List (admin / debug)                     -->
+    <!-- ============================================================ -->
+    <record id="view_respondio_contact_list" model="ir.ui.view">
+        <field name="name">respondio.contact.list</field>
+        <field name="model">respondio.contact</field>
+        <field name="arch" type="xml">
+            <list string="Respond.io Contacts">
+                <field name="respondio_id"/>
+                <field name="display_name_stored"/>
+                <field name="phone"/>
+                <field name="email"/>
+                <field name="channel"/>
+                <field name="partner_id"/>
+                <field name="tags"/>
+                <field name="last_seen_at"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_respondio_contact_form" model="ir.ui.view">
+        <field name="name">respondio.contact.form</field>
+        <field name="model">respondio.contact</field>
+        <field name="arch" type="xml">
+            <form string="Respond.io Contact">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="respondio_id"/>
+                            <field name="display_name_stored"/>
+                            <field name="phone"/>
+                            <field name="email"/>
+                            <field name="channel"/>
+                            <field name="tags"/>
+                        </group>
+                        <group>
+                            <field name="account_id"/>
+                            <field name="partner_id"/>
+                            <field name="last_seen_at"/>
+                        </group>
+                    </group>
+                    <group string="Debug" groups="respondio_crm_bridge.group_respondio_admin">
+                        <field name="raw_payload"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_respondio_contact" model="ir.actions.act_window">
+        <field name="name">Respond.io Contacts</field>
+        <field name="res_model">respondio.contact</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
