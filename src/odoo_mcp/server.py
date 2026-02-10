@@ -3169,6 +3169,406 @@ def get_stock_discrepancies(
 
 
 # ---------------------------------------------------------------------------
+# Groomer & Veterinarian Commission Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_groomer_commissions(
+    groomer_name: str = "",
+    month: str = "",
+    year: str = "",
+    branch_name: str = "",
+    limit: int = 50,
+) -> str:
+    """Get detailed groomer (estilista) commission lines from POS sales.
+
+    Uses the comision.estilista SQL view which calculates commissions from
+    POS orders for grooming services (Peluquería category). When multiple
+    groomers share a service, the amount is divided equally.
+
+    Args:
+        groomer_name: Filter by groomer/stylist name (partial match).
+        month: Filter by month name (e.g. 'Enero', 'Febrero'). Partial match.
+        year: Filter by year (e.g. '2025').
+        branch_name: Filter by branch/analytic account name (partial match).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if groomer_name:
+        domain.append(["estilista_nombre", "ilike", groomer_name])
+    if month:
+        domain.append(["mes", "ilike", month])
+    if year:
+        domain.append(["anio", "=", year])
+    if branch_name:
+        domain.append(["analytic_account_nombre", "ilike", branch_name])
+
+    client = get_client()
+    records = client.search_read(
+        "comision.estilista",
+        domain=domain,
+        fields=[
+            "estilista_nombre", "analytic_account_nombre", "fecha",
+            "mes", "anio", "producto_nombre", "mascota_nombre",
+            "cliente_id", "monto_total_linea", "cantidad_estilistas",
+            "monto_proporcional", "porcentaje_comision", "monto_comision",
+            "estado_orden",
+        ],
+        limit=limit,
+        order="fecha desc",
+    )
+    count = client.search_count("comision.estilista", domain=domain)
+    header = f"Groomer Commission Lines: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_groomer_commission_summary(
+    groomer_name: str = "",
+    month: str = "",
+    year: str = "",
+    limit: int = 30,
+) -> str:
+    """Get monthly groomer commission summary with KPIs, penalties, and final amounts.
+
+    Uses comision.estilista.resumen which aggregates commissions per groomer
+    per month, including:
+    - Total services and sales
+    - Commission amount (before and after penalties)
+    - Growth vs previous month
+    - Ranking among groomers
+    - Penalties (absences, tardiness, complaints)
+
+    Args:
+        groomer_name: Filter by groomer name (partial match).
+        month: Filter by month date (YYYY-MM-DD format, first day of month).
+        year: Filter by year in the mes_fecha field (e.g. '2025').
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if groomer_name:
+        domain.append(["estilista_nombre", "ilike", groomer_name])
+    if month:
+        domain.append(["mes_fecha", "=", month])
+    if year:
+        domain.append(["anio", "=", year])
+
+    client = get_client()
+    records = client.search_read(
+        "comision.estilista.resumen",
+        domain=domain,
+        fields=[
+            "estilista_id", "estilista_nombre", "mes", "anio", "mes_fecha",
+            "total_servicios", "total_ventas", "total_comision",
+            "promedio_por_servicio", "servicios_compartidos", "pct_compartidos",
+            "ventas_mes_anterior", "comision_mes_anterior",
+            "crecimiento_ventas", "crecimiento_servicios",
+            "ranking_mes",
+            "total_ausencias", "total_horas_tardanza", "total_quejas",
+            "porcentaje_sancion", "monto_descuento", "comision_final",
+        ],
+        limit=limit,
+        order="mes_fecha desc, ranking_mes asc",
+    )
+    count = client.search_count("comision.estilista.resumen", domain=domain)
+    header = f"Groomer Commission Summary: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_vet_commission_summary(
+    vet_name: str = "",
+    month: str = "",
+    year: str = "",
+    limit: int = 30,
+) -> str:
+    """Get monthly veterinarian commission summary with KPIs.
+
+    Uses comision.veterinario.resumen which aggregates veterinary service
+    commissions per veterinarian per month (Clínica category products).
+
+    Args:
+        vet_name: Filter by veterinarian name (partial match).
+        month: Filter by month date (YYYY-MM-DD format, first day of month).
+        year: Filter by year in the mes_fecha field (e.g. '2025').
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if vet_name:
+        domain.append(["veterinario_nombre", "ilike", vet_name])
+    if month:
+        domain.append(["mes_fecha", "=", month])
+    if year:
+        domain.append(["anio", "=", year])
+
+    client = get_client()
+    records = client.search_read(
+        "comision.veterinario.resumen",
+        domain=domain,
+        fields=[
+            "veterinario_id", "veterinario_nombre", "mes", "anio", "mes_fecha",
+            "total_servicios", "total_ventas", "total_comision",
+            "promedio_por_servicio",
+            "ventas_mes_anterior", "comision_mes_anterior",
+            "crecimiento_ventas", "crecimiento_servicios",
+            "ranking_mes",
+            "total_ausencias", "total_horas_tardanza", "total_quejas",
+            "porcentaje_sancion", "monto_descuento", "comision_final",
+        ],
+        limit=limit,
+        order="mes_fecha desc, ranking_mes asc",
+    )
+    count = client.search_count("comision.veterinario.resumen", domain=domain)
+    header = f"Vet Commission Summary: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_groomer_sanctions(
+    groomer_name: str = "",
+    sanction_type: str = "",
+    state: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    limit: int = 20,
+) -> str:
+    """Get groomer sanctions/penalties (absences, tardiness, complaints).
+
+    These reduce the groomer's final commission for the month.
+
+    Args:
+        groomer_name: Filter by groomer name (partial match).
+        sanction_type: Filter by sanction type: 'ausencia', 'tardanza', 'queja', 'otro'.
+        state: Filter by state: 'borrador', 'confirmado', 'cancelado'.
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if groomer_name:
+        domain.append(["employee_id.name", "ilike", groomer_name])
+    if sanction_type:
+        domain.append(["tipo_sancion_id.tipo", "=", sanction_type])
+    if state:
+        domain.append(["estado", "=", state])
+    if date_from:
+        domain.append(["fecha", ">=", date_from])
+    if date_to:
+        domain.append(["fecha", "<=", date_to])
+
+    client = get_client()
+    records = client.search_read(
+        "sancion.peluquero",
+        domain=domain,
+        fields=[
+            "employee_id", "tipo_sancion_id", "fecha", "mes",
+            "cantidad_dias", "cantidad_horas",
+            "porcentaje_descuento", "motivo", "estado",
+        ],
+        limit=limit,
+        order="fecha desc",
+    )
+    count = client.search_count("sancion.peluquero", domain=domain)
+    header = f"Groomer Sanctions: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
+# Pets per Salesperson/Commercial Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_pets_per_salesperson(
+    salesperson_name: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    service_type: str = "",
+    limit: int = 30,
+) -> str:
+    """Get the number of pets (dogs/cats) handled per salesperson/commercial.
+
+    Uses x.mascota.line which links pets to sale orders. Groups by the
+    sale order's salesperson (user_id) to show how many unique pets each
+    commercial has handled.
+
+    Args:
+        salesperson_name: Filter by salesperson name (partial match).
+        date_from: Filter orders from this date (YYYY-MM-DD).
+        date_to: Filter orders until this date (YYYY-MM-DD).
+        service_type: Filter by service: 'peluqueria', 'veterinaria', or empty for all.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if salesperson_name:
+        domain.append(["order_id.user_id.name", "ilike", salesperson_name])
+    if date_from:
+        domain.append(["order_id.date_order", ">=", date_from])
+    if date_to:
+        domain.append(["order_id.date_order", "<=", date_to])
+    if service_type == "peluqueria":
+        domain.append(["servicio_peluqueria", "=", True])
+    elif service_type == "veterinaria":
+        domain.append(["servicio_veterinaria", "=", True])
+
+    client = get_client()
+
+    # Group by salesperson to get pet counts
+    groups = client.read_group(
+        "x.mascota.line",
+        domain=domain,
+        fields=["order_id.user_id"],
+        groupby=["order_id.user_id"],
+    )
+
+    if not groups:
+        return "No pet service data found for the given filters."
+
+    # For each salesperson, get the detail
+    parts = ["=== Pets per Salesperson/Commercial ==="]
+    for g in groups:
+        user = g.get("order_id.user_id") or g.get("order_id", [False, "Unknown"])
+        if isinstance(user, (list, tuple)):
+            user_name = user[1]
+        else:
+            user_name = str(user)
+        count = g.get("order_id.user_id_count", g.get("__count", 0))
+        parts.append(f"- {user_name}: {count} pet service entries")
+
+    # Also get totals using search_read for more detail
+    records = client.search_read(
+        "x.mascota.line",
+        domain=domain,
+        fields=[
+            "order_id", "mascota_id", "cliente_id",
+            "servicio_peluqueria", "servicio_veterinaria",
+            "estado_servicio", "tipo_servicio_display",
+            "responsable_peluqueria", "responsable_veterinaria",
+            "nombres_estilistas", "fecha_programada",
+        ],
+        limit=limit,
+        order="create_date desc",
+    )
+
+    if records:
+        parts.append(f"\n=== Recent Pet Service Entries ({len(records)} records) ===")
+        parts.append(_format_records(records))
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def get_pet_service_lines_by_commercial(
+    date_from: str = "",
+    date_to: str = "",
+) -> str:
+    """Get a summary of pet services grouped by salesperson/commercial.
+
+    Shows for each salesperson:
+    - Number of orders with pets
+    - Total amount of pet service orders
+
+    Uses sale.order grouped by user_id filtered to orders containing pet services.
+
+    Args:
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+    """
+    domain: list[Any] = [["tiene_servicios", "=", True]]
+    if date_from:
+        domain.append(["date_order", ">=", date_from])
+    if date_to:
+        domain.append(["date_order", "<=", date_to])
+
+    client = get_client()
+    groups = client.read_group(
+        "sale.order",
+        domain=domain,
+        fields=["user_id", "amount_total", "count_total_mascotas"],
+        groupby=["user_id"],
+    )
+
+    if not groups:
+        return "No pet service orders found."
+
+    parts = ["=== Pet Service Orders by Commercial ==="]
+    for g in groups:
+        user = g.get("user_id", [False, "Unknown"])
+        user_name = user[1] if isinstance(user, (list, tuple)) else str(user)
+        count = g.get("user_id_count", 0)
+        amount = g.get("amount_total", 0)
+        pets = g.get("count_total_mascotas", 0)
+        parts.append(
+            f"- {user_name}: {count} orders, {pets} pets, "
+            f"total: {amount:,.2f}"
+        )
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def get_pet_comanda_details(
+    order_name: str = "",
+    pet_name: str = "",
+    groomer_name: str = "",
+    service_state: str = "",
+    date_from: str = "",
+    limit: int = 20,
+) -> str:
+    """Get detailed pet service commands (x.mascota.line) with assigned groomers.
+
+    Each record represents a pet + service assignment within a sale order,
+    including which groomer(s) are responsible, service type, status, and timing.
+
+    Args:
+        order_name: Filter by sale order name (partial match, e.g. 'SO001').
+        pet_name: Filter by pet name (partial match).
+        groomer_name: Filter by assigned groomer name (partial match).
+        service_state: Filter by service state: 'pendiente', 'confirmado',
+                       'en_proceso', 'terminado', 'entregado', 'no_se_presento', 'cancelado'.
+        date_from: Filter from this scheduled date (YYYY-MM-DD).
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if order_name:
+        domain.append(["order_id.name", "ilike", order_name])
+    if pet_name:
+        domain.append(["mascota_id.name", "ilike", pet_name])
+    if groomer_name:
+        domain.append(["responsable_peluqueria.name", "ilike", groomer_name])
+    if service_state:
+        domain.append(["estado_servicio", "=", service_state])
+    if date_from:
+        domain.append(["fecha_programada", ">=", date_from])
+
+    client = get_client()
+    records = client.search_read(
+        "x.mascota.line",
+        domain=domain,
+        fields=[
+            "order_id", "mascota_id", "cliente_id",
+            "servicio_peluqueria", "servicio_veterinaria",
+            "tipo_servicio_display", "estado_servicio", "prioridad",
+            "responsable_peluqueria", "responsable_veterinaria",
+            "nombres_estilistas", "responsables_asignados",
+            "fecha_programada", "fecha_inicio", "fecha_fin", "fecha_entrega",
+            "duracion_estimada", "duracion_real",
+            "peluqueria_express",
+            "bano", "corte", "acicalado", "rapado", "deslanado",
+            "profilaxis", "tinte", "corte_unas", "limpieza_oidos",
+            "observaciones", "motivo_visita",
+            "foto_llegada", "foto_salida",
+        ],
+        limit=limit,
+        order="fecha_programada desc",
+    )
+    count = client.search_count("x.mascota.line", domain=domain)
+    header = f"Pet Service Commands: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
 # Black Dog Business Overview Prompt
 # ---------------------------------------------------------------------------
 

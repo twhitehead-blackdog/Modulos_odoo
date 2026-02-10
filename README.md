@@ -2,7 +2,7 @@
 
 Servidor MCP (Model Context Protocol) para conectar Claude con instancias de Odoo 18 a través de XML-RPC.
 
-## Herramientas disponibles (73 tools)
+## Herramientas disponibles (82 tools)
 
 ### General / CRUD
 
@@ -214,6 +214,23 @@ Servidor MCP (Model Context Protocol) para conectar Claude con instancias de Odo
 |---|---|
 | `get_stock_discrepancies` | Discrepancias entre inventario teórico y físico |
 
+### Comisiones de Peluqueros y Veterinarios
+
+| Herramienta | Descripción |
+|---|---|
+| `get_groomer_commissions` | Líneas detalladas de comisión por peluquero (servicio, monto, % compartido) |
+| `get_groomer_commission_summary` | Resumen mensual de comisiones con KPIs, sanciones y monto final |
+| `get_vet_commission_summary` | Resumen mensual de comisiones de veterinarios |
+| `get_groomer_sanctions` | Sanciones de peluqueros (ausencias, tardanzas, quejas) |
+
+### Mascotas por Comercial
+
+| Herramienta | Descripción |
+|---|---|
+| `get_pets_per_salesperson` | Cantidad de mascotas atendidas por vendedor/comercial |
+| `get_pet_service_lines_by_commercial` | Resumen de órdenes con mascotas agrupado por comercial |
+| `get_pet_comanda_details` | Comandas detalladas de mascotas con peluqueros asignados y estado |
+
 ## Requisitos
 
 - Python 3.10+
@@ -423,6 +440,31 @@ Claude usará `get_product_requests` con `state="to_approve"`.
 > "Muéstrame las transacciones de Yappy pendientes"
 
 Claude usará `get_yappy_transactions` con `state="pending"`.
+
+### Comisiones de peluqueros
+> "Cuánto ganó cada peluquero en enero 2025?"
+
+Claude usará `get_groomer_commission_summary` con `year="2025"` y filtrando por mes.
+
+### Comisiones detalladas de un peluquero
+> "Muéstrame los servicios y comisiones de María en febrero"
+
+Claude usará `get_groomer_commissions` con `groomer_name="María"` y `month="Febrero"`.
+
+### Sanciones de peluqueros
+> "Qué sanciones tiene Pedro este mes?"
+
+Claude usará `get_groomer_sanctions` con `groomer_name="Pedro"` y filtros de fecha.
+
+### Mascotas por comercial
+> "Cuántos perros atendió cada comercial este mes?"
+
+Claude usará `get_pets_per_salesperson` con `date_from` del primer día del mes.
+
+### Comandas de mascotas
+> "Muéstrame las comandas pendientes de hoy con sus peluqueros"
+
+Claude usará `get_pet_comanda_details` con `service_state="pendiente"` y `date_from` de hoy.
 
 ### Vista general del negocio
 > "Dame un resumen completo del estado del negocio hoy"
