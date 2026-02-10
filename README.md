@@ -2,7 +2,7 @@
 
 Servidor MCP (Model Context Protocol) para conectar Claude con instancias de Odoo 18 a través de XML-RPC.
 
-## Herramientas disponibles (82 tools)
+## Herramientas disponibles (88 tools)
 
 ### General / CRUD
 
@@ -230,6 +230,17 @@ Servidor MCP (Model Context Protocol) para conectar Claude con instancias de Odo
 | `get_pets_per_salesperson` | Cantidad de mascotas atendidas por vendedor/comercial |
 | `get_pet_service_lines_by_commercial` | Resumen de órdenes con mascotas agrupado por comercial |
 | `get_pet_comanda_details` | Comandas detalladas de mascotas con peluqueros asignados y estado |
+
+### Workflow de Comandas (Servicios de Mascotas)
+
+| Herramienta | Descripción |
+|---|---|
+| `get_comanda_workflow_status` | Pipeline de estados de servicios (pendiente → confirmado → en proceso → terminado → entregado) por tipo y prioridad |
+| `get_groomer_time_tracking` | Registros de atención por peluquero/veterinario (duración, calificación, servicio) desde historial de atención |
+| `get_groomer_productivity` | Productividad agregada por staff: horas totales, servicios atendidos, calificación promedio |
+| `get_comanda_checklist_status` | Estado de checklists de servicios (tareas obligatorias/opcionales completadas por mascota) |
+| `get_comanda_services_ranking` | Ranking de servicios más solicitados (peluquería, baño, spa, veterinaria, etc.) |
+| `get_comanda_orders_summary` | Órdenes de venta con contadores de mascotas por tipo de servicio |
 
 ## Requisitos
 
@@ -465,6 +476,31 @@ Claude usará `get_pets_per_salesperson` con `date_from` del primer día del mes
 > "Muéstrame las comandas pendientes de hoy con sus peluqueros"
 
 Claude usará `get_pet_comanda_details` con `service_state="pendiente"` y `date_from` de hoy.
+
+### Pipeline de comandas
+> "Cómo está el flujo de comandas de hoy? Cuántas pendientes, en proceso y terminadas?"
+
+Claude usará `get_comanda_workflow_status` con `date_from` de hoy para ver el estado del pipeline por tipo de servicio.
+
+### Productividad de peluqueros
+> "Quién fue el peluquero más productivo esta semana?"
+
+Claude usará `get_groomer_productivity` con `date_from` del lunes para ver horas, servicios y calificación por peluquero.
+
+### Tiempo de atención por peluquero
+> "Cuánto tardó cada peluquero en sus servicios de hoy?"
+
+Claude usará `get_groomer_time_tracking` con `date_from` de hoy para ver duración de cada servicio.
+
+### Checklist de servicios
+> "Qué checklists de mascotas están pendientes de completar?"
+
+Claude usará `get_comanda_checklist_status` con `pending_only=True`.
+
+### Servicios más solicitados
+> "Cuáles son los servicios más populares del mes?"
+
+Claude usará `get_comanda_services_ranking` con filtros de fecha del mes actual.
 
 ### Vista general del negocio
 > "Dame un resumen completo del estado del negocio hoy"

@@ -3569,6 +3569,392 @@ def get_pet_comanda_details(
 
 
 # ---------------------------------------------------------------------------
+# Comanda Workflow & Operations Tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_comanda_workflow_status(
+    date_from: str = "",
+    date_to: str = "",
+    branch_name: str = "",
+) -> str:
+    """Get a summary of pet service comanda states (workflow status).
+
+    Shows how many pet service lines are in each state of the workflow:
+    pendiente → confirmado → en_proceso → terminado → entregado.
+    Also shows no_se_presento and cancelado counts.
+
+    Useful for daily operations to see the workload pipeline.
+
+    Args:
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+        branch_name: Filter by branch/warehouse name (partial match).
+    """
+    domain: list[Any] = []
+    if date_from:
+        domain.append(["fecha_programada", ">=", date_from])
+    if date_to:
+        domain.append(["fecha_programada", "<=", date_to])
+    if branch_name:
+        domain.append(["order_id.warehouse_id.name", "ilike", branch_name])
+
+    client = get_client()
+    by_state = client.read_group(
+        "x.mascota.line",
+        domain=domain,
+        fields=["estado_servicio"],
+        groupby=["estado_servicio"],
+    )
+    by_type = client.read_group(
+        "x.mascota.line",
+        domain=domain,
+        fields=["tipo_servicio_display"],
+        groupby=["tipo_servicio_display"],
+    )
+    by_priority = client.read_group(
+        "x.mascota.line",
+        domain=[["estado_servicio", "in", ["pendiente", "confirmado", "en_proceso"]]] + domain,
+        fields=["prioridad"],
+        groupby=["prioridad"],
+    )
+
+    parts = ["=== Comanda Workflow Status ==="]
+    state_labels = {
+        "pendiente": "Pendiente",
+        "confirmado": "Confirmado",
+        "en_proceso": "En Proceso",
+        "terminado": "Terminado",
+        "entregado": "Entregado",
+        "no_se_presento": "No se presentó",
+        "cancelado": "Cancelado",
+    }
+    for g in by_state:
+        st = g.get("estado_servicio", "?")
+        count = g.get("estado_servicio_count", 0)
+        label = state_labels.get(st, st)
+        parts.append(f"- {label}: {count}")
+
+    parts.append("\n=== By Service Type ===")
+    for g in by_type:
+        stype = g.get("tipo_servicio_display", "?")
+        count = g.get("tipo_servicio_display_count", 0)
+        parts.append(f"- {stype}: {count}")
+
+    if by_priority:
+        parts.append("\n=== Active Comandas by Priority ===")
+        priority_labels = {"baja": "Baja", "normal": "Normal", "alta": "Alta", "urgente": "URGENTE"}
+        for g in by_priority:
+            p = g.get("prioridad", "?")
+            count = g.get("prioridad_count", 0)
+            parts.append(f"- {priority_labels.get(p, p)}: {count}")
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def get_groomer_time_tracking(
+    groomer_name: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    service_type: str = "",
+    state: str = "",
+    limit: int = 30,
+) -> str:
+    """Get groomer/vet attendance and time tracking records (x.mascota.atencion.historial).
+
+    Each record shows who worked on a specific pet, for how long, doing what
+    service, and with what quality rating. This is the granular time tracking
+    that feeds into commission calculations.
+
+    Args:
+        groomer_name: Filter by staff name (partial match).
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+        service_type: Filter by type: 'peluqueria', 'veterinaria', 'ambos'.
+        state: Filter by state: 'en_proceso', 'completado', 'pausado', 'cancelado'.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if groomer_name:
+        domain.append(["responsable_id.name", "ilike", groomer_name])
+    if date_from:
+        domain.append(["fecha_inicio", ">=", date_from])
+    if date_to:
+        domain.append(["fecha_inicio", "<=", date_to])
+    if service_type:
+        domain.append(["tipo_servicio", "=", service_type])
+    if state:
+        domain.append(["estado", "=", state])
+
+    client = get_client()
+    records = client.search_read(
+        "x.mascota.atencion.historial",
+        domain=domain,
+        fields=[
+            "mascota_line_id", "responsable_id", "mascota_id",
+            "presupuesto_id", "cliente_id",
+            "tipo_servicio", "servicio_especifico",
+            "fecha_inicio", "fecha_fin",
+            "duracion_minutos", "duracion_horas",
+            "estado", "calificacion",
+            "notas", "observaciones_supervisor",
+        ],
+        limit=limit,
+        order="fecha_inicio desc",
+    )
+    count = client.search_count("x.mascota.atencion.historial", domain=domain)
+    header = f"Time Tracking Records: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_groomer_productivity(
+    date_from: str = "",
+    date_to: str = "",
+) -> str:
+    """Get groomer/staff productivity summary grouped by employee.
+
+    Aggregates time tracking data to show each staff member's:
+    - Total services completed
+    - Total hours worked
+    - Average time per service
+
+    Args:
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+    """
+    domain: list[Any] = [["estado", "=", "completado"]]
+    if date_from:
+        domain.append(["fecha_inicio", ">=", date_from])
+    if date_to:
+        domain.append(["fecha_inicio", "<=", date_to])
+
+    client = get_client()
+    by_staff = client.read_group(
+        "x.mascota.atencion.historial",
+        domain=domain,
+        fields=["responsable_id", "duracion_horas"],
+        groupby=["responsable_id"],
+    )
+
+    if not by_staff:
+        return "No completed service records found for the given period."
+
+    parts = ["=== Staff Productivity Summary ==="]
+    for g in by_staff:
+        staff = g.get("responsable_id", [False, "Unknown"])
+        staff_name = staff[1] if isinstance(staff, (list, tuple)) else str(staff)
+        count = g.get("responsable_id_count", 0)
+        hours = g.get("duracion_horas", 0)
+        avg = hours / count if count else 0
+        parts.append(
+            f"- {staff_name}: {count} services, {hours:.1f}h total, "
+            f"avg {avg:.1f}h/service"
+        )
+
+    # Also group by service type
+    by_service = client.read_group(
+        "x.mascota.atencion.historial",
+        domain=domain,
+        fields=["servicio_especifico", "duracion_horas"],
+        groupby=["servicio_especifico"],
+    )
+    if by_service:
+        parts.append("\n=== By Service Type ===")
+        for g in by_service:
+            svc = g.get("servicio_especifico", "?") or "sin_especificar"
+            count = g.get("servicio_especifico_count", 0)
+            hours = g.get("duracion_horas", 0)
+            avg = hours / count if count else 0
+            parts.append(f"- {svc}: {count} services, avg {avg:.1f}h")
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def get_comanda_checklist_status(
+    order_name: str = "",
+    pet_name: str = "",
+    checklist_type: str = "",
+    pending_only: bool = False,
+    limit: int = 30,
+) -> str:
+    """Get pet service checklist status (x.mascota.checklist).
+
+    Each pet service has a checklist of tasks that must be completed
+    (e.g. 'Revisar estado general', 'Bañar y secar', 'Cortar uñas').
+
+    Args:
+        order_name: Filter by sale order name (partial match).
+        pet_name: Filter by pet name (partial match).
+        checklist_type: Filter by type: 'peluqueria' or 'veterinaria'.
+        pending_only: If True, only show incomplete mandatory tasks.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = []
+    if order_name:
+        domain.append(["mascota_line_id.order_id.name", "ilike", order_name])
+    if pet_name:
+        domain.append(["mascota_line_id.mascota_id.name", "ilike", pet_name])
+    if checklist_type:
+        domain.append(["tipo_servicio", "=", checklist_type])
+    if pending_only:
+        domain.append(["completada", "=", False])
+        domain.append(["obligatoria", "=", True])
+
+    client = get_client()
+    records = client.search_read(
+        "x.mascota.checklist",
+        domain=domain,
+        fields=[
+            "mascota_line_id", "tipo_servicio", "tarea",
+            "secuencia", "completada", "obligatoria",
+            "fecha_completada", "completada_por", "notas",
+        ],
+        limit=limit,
+        order="mascota_line_id, secuencia",
+    )
+    count = client.search_count("x.mascota.checklist", domain=domain)
+    header = f"Checklist Items: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+@mcp.tool()
+def get_comanda_services_ranking(
+    date_from: str = "",
+    date_to: str = "",
+) -> str:
+    """Get the most requested pet services ranking.
+
+    Analyzes x.mascota.line records to count how many times each service
+    type was requested. Covers both grooming (baño, corte, acicalado, etc.)
+    and veterinary (vacunación, consulta, etc.) services.
+
+    Args:
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+    """
+    domain: list[Any] = []
+    if date_from:
+        domain.append(["create_date", ">=", date_from])
+    if date_to:
+        domain.append(["create_date", "<=", date_to])
+
+    client = get_client()
+    records = client.search_read(
+        "x.mascota.line",
+        domain=domain,
+        fields=[
+            "bano", "corte", "acicalado", "mantenimiento", "rapado",
+            "deslanado", "profilaxis", "tinte", "corte_unas", "limpieza_oidos",
+            "vacunacion", "desparasitacion", "consulta_general",
+            "consulta_derma", "cirugia_menor", "analisis_sangre", "analisis_quimica",
+            "peluqueria_express",
+        ],
+        limit=0,  # Get all records for counting
+    )
+
+    if not records:
+        return "No pet service data found."
+
+    # Count each service
+    service_counts: dict[str, int] = {}
+    service_labels = {
+        "bano": "Baño",
+        "corte": "Corte",
+        "acicalado": "Acicalado",
+        "mantenimiento": "Mantenimiento",
+        "rapado": "Rapado",
+        "deslanado": "Deslanado",
+        "profilaxis": "Profilaxis dental",
+        "tinte": "Tinte",
+        "corte_unas": "Corte de uñas",
+        "limpieza_oidos": "Limpieza de oídos",
+        "vacunacion": "Vacunación",
+        "desparasitacion": "Desparasitación",
+        "consulta_general": "Consulta general",
+        "consulta_derma": "Consulta dermatológica",
+        "cirugia_menor": "Cirugía menor",
+        "analisis_sangre": "Análisis de sangre",
+        "analisis_quimica": "Análisis química",
+        "peluqueria_express": "Express",
+    }
+
+    for r in records:
+        for field, label in service_labels.items():
+            if r.get(field):
+                service_counts[label] = service_counts.get(label, 0) + 1
+
+    # Sort by count descending
+    sorted_services = sorted(service_counts.items(), key=lambda x: x[1], reverse=True)
+
+    parts = [f"=== Most Requested Services (from {len(records)} comandas) ==="]
+    for i, (service, count) in enumerate(sorted_services, 1):
+        pct = (count / len(records)) * 100
+        parts.append(f"{i}. {service}: {count} ({pct:.1f}%)")
+
+    total_grooming = sum(1 for r in records if r.get("bano") or r.get("corte") or r.get("acicalado")
+                         or r.get("rapado") or r.get("deslanado") or r.get("mantenimiento"))
+    total_vet = sum(1 for r in records if r.get("vacunacion") or r.get("consulta_general")
+                    or r.get("desparasitacion") or r.get("cirugia_menor"))
+
+    parts.append(f"\nTotal peluquería: {total_grooming} | Total veterinaria: {total_vet}")
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def get_comanda_orders_summary(
+    date_from: str = "",
+    date_to: str = "",
+    salesperson_name: str = "",
+    service_type: str = "",
+    limit: int = 20,
+) -> str:
+    """Get sale orders with pet service details (comanda view).
+
+    Shows orders that contain pet services with their counters: total pets,
+    grooming count, veterinary count, service types, and amounts.
+
+    Args:
+        date_from: Filter from this date (YYYY-MM-DD).
+        date_to: Filter until this date (YYYY-MM-DD).
+        salesperson_name: Filter by salesperson name (partial match).
+        service_type: Filter: 'solo_peluqueria', 'solo_veterinaria', 'ambos'.
+        limit: Maximum number of results.
+    """
+    domain: list[Any] = [["tiene_servicios", "=", True]]
+    if date_from:
+        domain.append(["date_order", ">=", date_from])
+    if date_to:
+        domain.append(["date_order", "<=", date_to])
+    if salesperson_name:
+        domain.append(["user_id.name", "ilike", salesperson_name])
+    if service_type:
+        domain.append(["tipo_servicio", "=", service_type])
+
+    client = get_client()
+    records = client.search_read(
+        "sale.order",
+        domain=domain,
+        fields=[
+            "name", "partner_id", "user_id", "state", "date_order",
+            "amount_total", "nombres_mascotas", "tipo_servicio",
+            "count_total_mascotas", "count_peluqueria", "count_veterinaria",
+            "count_total_servicios", "count_cortes", "count_solo_bano",
+            "count_bano_y_corte",
+        ],
+        limit=limit,
+        order="date_order desc",
+    )
+    count = client.search_count("sale.order", domain=domain)
+    header = f"Pet Service Orders: showing {len(records)} of {count} total"
+    return header + "\n\n" + _format_records(records)
+
+
+# ---------------------------------------------------------------------------
 # Black Dog Business Overview Prompt
 # ---------------------------------------------------------------------------
 
