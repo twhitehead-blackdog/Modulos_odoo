@@ -19,10 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger("odoo_mcp")
 
 # Initialize MCP server
-mcp = FastMCP(
-    "odoo18",
-    description="MCP server for interacting with Odoo 18 via XML-RPC",
-)
+mcp = FastMCP("odoo18")
 
 # Lazy-initialized client
 _client: OdooClient | None = None
