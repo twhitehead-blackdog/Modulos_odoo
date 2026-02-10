@@ -20,8 +20,8 @@ class RespondioAccount(models.Model):
     api_base_url = fields.Char(
         string="API Base URL",
         required=True,
-        default="https://api.respond.io/api/v2",
-        help="Base URL for the respond.io API (e.g. https://api.respond.io/api/v2)",
+        default="https://api.respond.io/v2",
+        help="Base URL for the respond.io API (e.g. https://api.respond.io/v2)",
     )
     api_token = fields.Char(
         string="API Token",

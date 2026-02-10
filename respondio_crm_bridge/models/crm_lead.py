@@ -66,6 +66,24 @@ class CrmLead(models.Model):
             },
         }
 
+    def action_respondio_post_comment(self):
+        """Open wizard to post an internal comment to respond.io."""
+        self.ensure_one()
+        if not self.respondio_contact_id:
+            return
+        return {
+            "type": "ir.actions.act_window",
+            "name": "Post Comment to Respond.io",
+            "res_model": "respondio.post.comment.wizard",
+            "view_mode": "form",
+            "target": "new",
+            "context": {
+                "default_lead_id": self.id,
+                "default_respondio_contact_id": self.respondio_contact_id.id,
+                "default_account_id": self.respondio_contact_id.account_id.id,
+            },
+        }
+
     def action_create_followup_activity(self):
         """Create a follow-up activity linked to respond.io conversation."""
         self.ensure_one()

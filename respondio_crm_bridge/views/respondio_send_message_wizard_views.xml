@@ -20,4 +20,29 @@
             </form>
         </field>
     </record>
+
+    <record id="view_respondio_post_comment_wizard_form" model="ir.ui.view">
+        <field name="name">respondio.post.comment.wizard.form</field>
+        <field name="model">respondio.post.comment.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Post Comment to Respond.io">
+                <group>
+                    <field name="lead_id" invisible="1"/>
+                    <field name="account_id" invisible="1"/>
+                    <field name="respondio_contact_id" readonly="1"/>
+                    <field name="text" widget="text"
+                           placeholder="Write an internal comment (max 1000 chars)..."/>
+                </group>
+                <div class="alert alert-info" role="alert">
+                    <p>Use <code>{{@user.ID}}</code> to mention users or
+                       <code>{{$contact.name}}</code> for dynamic variables.</p>
+                </div>
+                <footer>
+                    <button name="action_post" string="Post Comment" type="object"
+                            class="oe_highlight" icon="fa-comment"/>
+                    <button string="Cancel" class="oe_link" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
 </odoo>

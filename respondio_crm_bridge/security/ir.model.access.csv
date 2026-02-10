@@ -12,3 +12,5 @@ access_respondio_event_log_sales,respondio.event.log sales (read),model_respondi
 access_respondio_event_log_readonly,respondio.event.log readonly,model_respondio_event_log,group_respondio_readonly,1,0,0,0
 access_respondio_send_message_wizard_sales,respondio.send.message.wizard sales,model_respondio_send_message_wizard,group_respondio_sales,1,1,1,0
 access_respondio_send_message_wizard_admin,respondio.send.message.wizard admin,model_respondio_send_message_wizard,group_respondio_admin,1,1,1,1
+access_respondio_post_comment_wizard_sales,respondio.post.comment.wizard sales,model_respondio_post_comment_wizard,group_respondio_sales,1,1,1,0
+access_respondio_post_comment_wizard_admin,respondio.post.comment.wizard admin,model_respondio_post_comment_wizard,group_respondio_admin,1,1,1,1

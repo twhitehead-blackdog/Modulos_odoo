@@ -37,6 +37,11 @@
                         type="object"
                         icon="fa-paper-plane"
                         invisible="not respondio_contact_id"/>
+                <button name="action_respondio_post_comment"
+                        string="Post Comment"
+                        type="object"
+                        icon="fa-comment"
+                        invisible="not respondio_contact_id"/>
                 <button name="action_create_followup_activity"
                         string="Follow-up Activity"
                         type="object"
